@@ -43,21 +43,31 @@ async function initDb() {
   const fs = require('fs');
   const path = require('path');
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
-  // Execute each statement individually
+  
+  // Better SQL parsing: split on semicolons, handle multiline statements
   const stmts = schema
-    .split(/;\s*\n/)
+    .split(';')
     .map(s => s.trim())
-    .filter(s => s.length > 0 && !s.startsWith('--'));
+    .filter(s => s.length > 0 && !s.startsWith('--') && s !== '');
 
-  for (const stmt of stmts) {
+  console.log(`Executing ${stmts.length} SQL statements...`);
+  for (let i = 0; i < stmts.length; i++) {
+    const stmt = stmts[i];
+    if (!stmt) continue;
+    
     try {
       await client.execute(stmt);
+      if (stmt.includes('CREATE TABLE')) {
+        const match = stmt.match(/CREATE TABLE\s+(?:IF NOT EXISTS\s+)?(\w+)/i);
+        if (match) console.log(`✓ Created table: ${match[1]}`);
+      }
     } catch (e) {
       if (
         !e.message.includes('already exists') &&
         !e.message.includes('duplicate')
       ) {
-        // ignore safe schema errors
+        console.error(`❌ SQL Error on statement ${i + 1}:`, stmt.substring(0, 50) + '...', e.message);
+        throw e;
       }
     }
   }
