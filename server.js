@@ -5,7 +5,6 @@ const path = require('path');
 const { initDb } = require('./db/database');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(bodyParser.json({ limit: '10mb' }));
@@ -27,19 +26,40 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// ── Start ─────────────────────────────────────────────────────────────────────
-initDb().then(async () => {
-  // Run seed if DB is empty
+// ── Init DB ───────────────────────────────────────────────────────────────────
+let dbReady = false;
+async function ensureDb() {
+  if (dbReady) return;
+  await initDb();
+  // Auto-seed if empty
   const { get } = require('./db/database');
   const existing = await get('SELECT COUNT(*) n FROM utilisateurs');
   if (!existing || existing.n === 0) {
     console.log('⚙️  Base vide — exécution du seed...');
-    require('./scripts/seed');
+    const seed = require('./scripts/seed');
+    await seed();
   }
-  app.listen(PORT, () => {
-    console.log(`\n🚢  Transit App lancée → http://localhost:${PORT}\n`);
+  dbReady = true;
+}
+
+// ── Local dev server ──────────────────────────────────────────────────────────
+if (require.main === module) {
+  const PORT = process.env.PORT || 3001;
+  ensureDb().then(() => {
+    app.listen(PORT, () => {
+      console.log(`\n🚢  Transit App lancée → http://localhost:${PORT}\n`);
+    });
+  }).catch(err => {
+    console.error('Erreur initialisation DB:', err.message);
+    process.exit(1);
   });
-}).catch(err => {
-  console.error('Erreur initialisation DB:', err.message);
-  process.exit(1);
-});
+}
+
+// ── Vercel serverless export ──────────────────────────────────────────────────
+// Wrap app to ensure DB is initialized before handling requests
+const handler = async (req, res) => {
+  await ensureDb();
+  app(req, res);
+};
+
+module.exports = handler;

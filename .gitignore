@@ -13,3 +13,4 @@ scripts/merge.js
 scripts/rest_app.js
 scripts/lines_code.txt
 public/devis_page.tmp
+.vercel

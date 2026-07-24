@@ -1,59 +1,63 @@
-const sqlite3 = require('sqlite3').verbose();
-const fs = require('fs');
-const path = require('path');
+const { createClient } = require('@libsql/client');
 
-// Use /data disk on Render/Railway, fallback to local for dev
-const DB_PATH = process.env.NODE_ENV === 'production'
-  ? path.join('/data', 'transit.db')
-  : path.join(__dirname, 'transit.db');
-const SCHEMA_PATH = path.join(__dirname, 'schema.sql');
+// Turso en prod, SQLite local en dev
+const client = createClient(
+  process.env.TURSO_DATABASE_URL
+    ? {
+        url: process.env.TURSO_DATABASE_URL,
+        authToken: process.env.TURSO_AUTH_TOKEN,
+      }
+    : {
+        url: 'file:' + require('path').join(__dirname, 'transit.db'),
+      }
+);
 
-let _db = null;
-
-function getDb() {
-  if (!_db) {
-    _db = new sqlite3.Database(DB_PATH);
-    _db.run('PRAGMA journal_mode = WAL');
-    _db.run('PRAGMA foreign_keys = ON');
-  }
-  return _db;
+async function run(sql, params = []) {
+  const result = await client.execute({ sql, args: params });
+  return { lastID: Number(result.lastInsertRowid), changes: result.rowsAffected };
 }
 
-function run(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    getDb().run(sql, params, function (err) {
-      if (err) reject(err);
-      else resolve({ lastID: this.lastID, changes: this.changes });
-    });
-  });
+async function get(sql, params = []) {
+  const result = await client.execute({ sql, args: params });
+  if (!result.rows || result.rows.length === 0) return null;
+  return rowToObject(result.columns, result.rows[0]);
 }
 
-function get(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    getDb().get(sql, params, (err, row) => {
-      if (err) reject(err);
-      else resolve(row || null);
-    });
-  });
+async function all(sql, params = []) {
+  const result = await client.execute({ sql, args: params });
+  if (!result.rows) return [];
+  return result.rows.map(row => rowToObject(result.columns, row));
 }
 
-function all(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    getDb().all(sql, params, (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows || []);
-    });
+function rowToObject(columns, row) {
+  const obj = {};
+  columns.forEach((col, i) => {
+    const val = row[i];
+    // Convert BigInt to number
+    obj[col] = typeof val === 'bigint' ? Number(val) : val;
   });
+  return obj;
 }
 
 async function initDb() {
-  const schema = fs.readFileSync(SCHEMA_PATH, 'utf8');
-  // Split on semicolons but keep content
-  const stmts = schema.split(/;\s*\n/).map(s => s.trim()).filter(Boolean);
+  const fs = require('fs');
+  const path = require('path');
+  const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
+  // Execute each statement individually
+  const stmts = schema
+    .split(/;\s*\n/)
+    .map(s => s.trim())
+    .filter(s => s.length > 0 && !s.startsWith('--'));
+
   for (const stmt of stmts) {
-    try { await run(stmt); } catch (e) {
-      if (!e.message.includes('already exists') && !e.message.includes('duplicate')) {
-        // Silently skip known-safe errors
+    try {
+      await client.execute(stmt);
+    } catch (e) {
+      if (
+        !e.message.includes('already exists') &&
+        !e.message.includes('duplicate')
+      ) {
+        // ignore safe schema errors
       }
     }
   }
@@ -62,17 +66,25 @@ async function initDb() {
 // Generate next document number
 async function nextNum(typeDoc, annee) {
   const yr = annee || new Date().getFullYear();
-  let row = await get('SELECT * FROM compteurs WHERE type_doc = ? AND annee = ?', [typeDoc, yr]);
+  let row = await get(
+    'SELECT * FROM compteurs WHERE type_doc = ? AND annee = ?',
+    [typeDoc, yr]
+  );
   if (!row) {
-    await run('INSERT INTO compteurs (type_doc, annee, dernier_num) VALUES (?,?,0)', [typeDoc, yr]);
+    await run(
+      'INSERT INTO compteurs (type_doc, annee, dernier_num) VALUES (?,?,0)',
+      [typeDoc, yr]
+    );
     row = { dernier_num: 0 };
   }
   const next = row.dernier_num + 1;
-  await run('UPDATE compteurs SET dernier_num = ? WHERE type_doc = ? AND annee = ?', [next, typeDoc, yr]);
+  await run(
+    'UPDATE compteurs SET dernier_num = ? WHERE type_doc = ? AND annee = ?',
+    [next, typeDoc, yr]
+  );
   return next;
 }
 
-// Format: 2026I00130
 async function genRefDossier(typeCode) {
   const yr = new Date().getFullYear();
   const key = `DOSSIER_${typeCode}`;
@@ -98,4 +110,7 @@ async function genRefPreavis() {
   return `PRE${yr}${String(n).padStart(4, '0')}`;
 }
 
-module.exports = { getDb, run, get, all, initDb, genRefDossier, genNumDevis, genNumFacture, genRefPreavis };
+module.exports = {
+  run, get, all, initDb,
+  genRefDossier, genNumDevis, genNumFacture, genRefPreavis,
+};

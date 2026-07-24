@@ -286,9 +286,11 @@ async function seed() {
 }
 
 // Run if called directly
-seed().catch(e => {
-  console.error('Erreur seed:', e.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  seed().catch(e => {
+    console.error('Erreur seed:', e.message);
+    process.exit(1);
+  });
+}
 
 module.exports = seed;
