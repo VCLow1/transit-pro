@@ -1,6 +1,3 @@
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
-
 -- ─── Utilisateurs ────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS utilisateurs (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,

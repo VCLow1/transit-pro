@@ -30,16 +30,31 @@ app.get('*', (req, res) => {
 let dbReady = false;
 async function ensureDb() {
   if (dbReady) return;
-  await initDb();
-  // Auto-seed if empty
-  const { get } = require('./db/database');
-  const existing = await get('SELECT COUNT(*) n FROM utilisateurs');
-  if (!existing || existing.n === 0) {
-    console.log('⚙️  Base vide — exécution du seed...');
-    const seed = require('./scripts/seed');
-    await seed();
+  try {
+    await initDb();
+    console.log('✅ Schema initialisé');
+    
+    // Auto-seed if empty
+    const { get } = require('./db/database');
+    let existing;
+    try {
+      existing = await get('SELECT COUNT(*) n FROM utilisateurs');
+    } catch (e) {
+      // Table doesn't exist, assume empty DB
+      existing = null;
+    }
+    
+    if (!existing || existing.n === 0) {
+      console.log('⚙️  Base vide — exécution du seed...');
+      const seed = require('./scripts/seed');
+      await seed();
+      console.log('✅ Seed terminé');
+    }
+    dbReady = true;
+  } catch (error) {
+    console.error('❌ Erreur init DB:', error.message);
+    throw error;
   }
-  dbReady = true;
 }
 
 // ── Local dev server ──────────────────────────────────────────────────────────
