@@ -5,7 +5,18 @@ const path = require('path');
 
 const app = express();
 app.use(express.json());
-app.use(express.static('public'));
+
+// Serve static files with proper MIME types
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.css')) {
+      res.setHeader('Content-Type', 'text/css');
+    }
+    if (filePath.endsWith('.js')) {
+      res.setHeader('Content-Type', 'application/javascript');
+    }
+  }
+}));
 
 // Mock data - no database for now
 const users = [
@@ -59,6 +70,12 @@ app.get('/api/dashboard', (req, res) => {
       ca_total: 15000
     }
   });
+});
+
+// Test CSS endpoint
+app.get('/test-css', (req, res) => {
+  const cssPath = path.join(__dirname, 'public', 'style.css');
+  res.sendFile(cssPath);
 });
 
 // Fallback for SPA
