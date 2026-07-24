@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Transit Pro — Gestion de transit</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <!-- Login screen -->
+  <div id="loginScreen" class="login-screen">
+    <div class="login-card">
+      <div class="login-logo">
+        <div class="logo-mark">🚢</div>
+        <h1>Transit Pro</h1>
+        <p>Plateforme de gestion de transit</p>
+      </div>
+      <form id="loginForm" class="login-form">
+        <div class="field-group">
+          <label>Identifiant</label>
+          <input type="text" id="loginInput" placeholder="admin" autocomplete="username" required/>
+        </div>
+        <div class="field-group">
+          <label>Mot de passe</label>
+          <input type="password" id="passwordInput" placeholder="••••••••" autocomplete="current-password" required/>
+        </div>
+        <div id="loginError" class="login-error hidden"></div>
+        <button type="submit" class="btn btn-primary btn-full" id="loginBtn">
+          <span>Se connecter</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- App shell -->
+  <div id="appShell" class="app-shell hidden">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-top">
+        <div class="app-logo">
+          <span class="app-logo-icon">🚢</span>
+          <span class="app-logo-text">Transit Pro</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a class="nav-link" data-page="dashboard">
+          <svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+          <span>Tableau de bord</span>
+        </a>
+        <a class="nav-link" data-page="clients">
+          <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+          <span>Clients</span>
+        </a>
+        <a class="nav-link" data-page="dossiers">
+          <svg viewBox="0 0 24 24"><path d="M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2z"/></svg>
+          <span>Dossiers</span>
+        </a>
+        <a class="nav-link" data-page="devis">
+          <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 14H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+          <span>Devis</span>
+        </a>
+        <a class="nav-link" data-page="factures">
+          <svg viewBox="0 0 24 24"><path d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>
+          <span>Factures</span>
+        </a>
+        <a class="nav-link" data-page="debours">
+          <svg viewBox="0 0 24 24"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>
+          <span>Débours</span>
+        </a>
+        <a class="nav-link" data-page="preavis">
+          <svg viewBox="0 0 24 24"><path d="M20 3H4v10c0 2.21 1.79 4 4 4h6c2.21 0 4-1.79 4-4v-3h2c1.11 0 2-.89 2-2V5c0-1.11-.89-2-2-2zm0 5h-2V5h2v3zM4 19h16v2H4z"/></svg>
+          <span>Préavis</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <button class="theme-toggle" id="themeToggle" title="Mode sombre">
+          <svg id="themeIcon" viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/></svg>
+        </button>
+        <div class="user-chip" id="userChip">
+          <div class="user-avatar" id="userAvatar">K</div>
+          <div class="user-info">
+            <span class="user-name" id="userName">Admin</span>
+            <span class="user-role" id="userRole">admin</span>
+          </div>
+        </div>
+        <button class="logout-btn" id="logoutBtn" title="Déconnexion">
+          <svg viewBox="0 0 24 24"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <div class="main-wrapper">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="sidebar-toggle" id="sidebarToggle">
+            <svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+          </button>
+          <h1 class="page-title" id="pageTitle">Tableau de bord</h1>
+        </div>
+        <div class="topbar-right" id="topbarActions"></div>
+      </header>
+      <main class="content" id="content">
+        <div class="loading-state">
+          <div class="spinner"></div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-overlay hidden" id="modalOverlay">
+    <div class="modal" id="modal" role="dialog">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modalTitle">Titre</h2>
+        <button class="modal-close" id="modalClose" aria-label="Fermer">
+          <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toasts" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
