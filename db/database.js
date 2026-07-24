@@ -42,9 +42,9 @@ function rowToObject(columns, row) {
 async function initDb() {
   const fs = require('fs');
   const path = require('path');
-  const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
+  // Use simple schema for Turso compatibility  
+  const schema = fs.readFileSync(path.join(__dirname, 'schema-simple.sql'), 'utf8');
   
-  // Better SQL parsing: split on semicolons, handle multiline statements
   const stmts = schema
     .split(';')
     .map(s => s.trim())
@@ -62,13 +62,8 @@ async function initDb() {
         if (match) console.log(`✓ Created table: ${match[1]}`);
       }
     } catch (e) {
-      if (
-        !e.message.includes('already exists') &&
-        !e.message.includes('duplicate')
-      ) {
-        console.error(`❌ SQL Error on statement ${i + 1}:`, stmt.substring(0, 50) + '...', e.message);
-        throw e;
-      }
+      console.error(`❌ SQL Error on statement ${i + 1}:`, stmt.substring(0, 50) + '...', e.message);
+      throw e;
     }
   }
 }
