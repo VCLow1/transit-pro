@@ -2,7 +2,10 @@ const sqlite3 = require('sqlite3').verbose();
 const fs = require('fs');
 const path = require('path');
 
-const DB_PATH = path.join(__dirname, 'transit.db');
+// Use /data disk on Render/Railway, fallback to local for dev
+const DB_PATH = process.env.NODE_ENV === 'production'
+  ? path.join('/data', 'transit.db')
+  : path.join(__dirname, 'transit.db');
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql');
 
 let _db = null;
