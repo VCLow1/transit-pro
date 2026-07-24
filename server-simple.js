@@ -6,17 +6,23 @@ const path = require('path');
 const app = express();
 app.use(express.json());
 
-// Serve static files with proper MIME types
+// Serve static files with proper MIME types  
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('.css')) {
-      res.setHeader('Content-Type', 'text/css');
+      res.setHeader('Content-Type', 'text/css; charset=utf-8');
     }
     if (filePath.endsWith('.js')) {
-      res.setHeader('Content-Type', 'application/javascript');
+      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
     }
   }
 }));
+
+// Explicit CSS route for debugging
+app.get('/style.css', (req, res) => {
+  res.setHeader('Content-Type', 'text/css; charset=utf-8');
+  res.sendFile(path.join(__dirname, 'public', 'style.css'));
+});
 
 // Mock data - no database for now
 const users = [
@@ -75,7 +81,27 @@ app.get('/api/dashboard', (req, res) => {
 // Test CSS endpoint
 app.get('/test-css', (req, res) => {
   const cssPath = path.join(__dirname, 'public', 'style.css');
+  console.log('CSS Path:', cssPath);
+  console.log('File exists:', require('fs').existsSync(cssPath));
+  res.setHeader('Content-Type', 'text/css; charset=utf-8');
   res.sendFile(cssPath);
+});
+
+// Debug static files
+app.get('/debug-static', (req, res) => {
+  const fs = require('fs');
+  const publicPath = path.join(__dirname, 'public');
+  try {
+    const files = fs.readdirSync(publicPath);
+    res.json({
+      publicPath,
+      files,
+      __dirname,
+      exists: fs.existsSync(publicPath)
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Fallback for SPA
