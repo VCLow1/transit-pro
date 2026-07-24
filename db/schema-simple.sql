@@ -18,11 +18,49 @@ CREATE TABLE IF NOT EXISTS tva (
   defaut INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS secteur_activite (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  libelle TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS type_declaration (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  libelle TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rubrique (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  libelle TEXT NOT NULL,
+  prix_defaut REAL NOT NULL DEFAULT 0,
+  tva_id INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS clients (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   code TEXT NOT NULL UNIQUE,
   raison_sociale TEXT NOT NULL,
+  secteur_id INTEGER,
+  adresse TEXT,
+  ville TEXT,
+  code_postal TEXT,
+  pays TEXT NOT NULL DEFAULT 'Tunisie',
   telephone TEXT,
+  fax TEXT,
   email TEXT,
+  contact TEXT,
+  nif TEXT,
+  tva_num TEXT,
+  notes TEXT,
+  actif INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS compteurs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  type_doc TEXT NOT NULL UNIQUE,
+  annee INTEGER NOT NULL,
+  dernier_num INTEGER NOT NULL DEFAULT 0
 );
