@@ -230,10 +230,4 @@ CREATE TABLE IF NOT EXISTS compteurs (
   dernier_num   INTEGER NOT NULL DEFAULT 0
 );
 
--- ─── Index ───────────────────────────────────────────────────────────────────
-CREATE INDEX IF NOT EXISTS idx_dossiers_client   ON dossiers(client_id);
-CREATE INDEX IF NOT EXISTS idx_dossiers_statut   ON dossiers(statut);
-CREATE INDEX IF NOT EXISTS idx_factures_client   ON factures(client_id);
-CREATE INDEX IF NOT EXISTS idx_factures_statut   ON factures(statut);
-CREATE INDEX IF NOT EXISTS idx_debours_dossier   ON debours(dossier_id);
-CREATE INDEX IF NOT EXISTS idx_preavis_dossier   ON preavis_arrivee(dossier_id);
+-- ─── Index supprimés pour compatibilité Turso ───────────────────────────────
