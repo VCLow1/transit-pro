@@ -8,10 +8,17 @@ const { authMiddleware, superviseurOnly, agentOrSuperviseur } = require('../midd
 const router = express.Router();
 router.use(authMiddleware);
 
-// Configuration Multer pour les pièces jointes
-const uploadDir = path.join(__dirname, '../public/uploads/etapes');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
+const isVercel = process.env.VERCEL === '1' || !!process.env.LAMBDA_TASK_ROOT;
+const uploadDir = isVercel
+  ? '/tmp/uploads/etapes'
+  : path.join(__dirname, '../public/uploads/etapes');
+
+try {
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+} catch (e) {
+  console.warn('Unable to create upload directory:', e.message);
 }
 
 const storage = multer.diskStorage({
