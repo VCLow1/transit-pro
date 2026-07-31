@@ -119,6 +119,67 @@ async function initDb() {
     }
   }
 
+  // ── Vérification et migration des colonnes critiques ─────────────────────────
+  // Si une table existe mais manque des colonnes clés (schéma ancien sur Turso),
+  // on la recrée proprement. Les try/catch ignorent les erreurs silencieuses.
+  
+  // Vérifier factures.client_id
+  try {
+    const cols = await all("PRAGMA table_info(factures)");
+    const hasClientId = cols.some(c => c.name === 'client_id');
+    if (!hasClientId) {
+      console.log('🔄 Recreating factures table (missing client_id)...');
+      await client.execute('DROP TABLE IF EXISTS facture_lignes');
+      await client.execute('DROP TABLE IF EXISTS paiements');
+      await client.execute('DROP TABLE IF EXISTS decharges');
+      await client.execute('DROP TABLE IF EXISTS factures');
+      await client.execute(`CREATE TABLE factures (id INTEGER PRIMARY KEY AUTOINCREMENT, numero TEXT NOT NULL UNIQUE, dossier_id INTEGER REFERENCES dossiers(id), client_id INTEGER NOT NULL REFERENCES clients(id), devis_id INTEGER REFERENCES devis(id), date_facture TEXT NOT NULL DEFAULT (date('now')), date_echeance TEXT, statut TEXT NOT NULL DEFAULT 'brouillon', objet TEXT, conditions TEXT, notes TEXT, remise_globale REAL NOT NULL DEFAULT 0, created_by INTEGER REFERENCES utilisateurs(id), created_at TEXT NOT NULL DEFAULT (datetime('now')))`);
+      await client.execute(`CREATE TABLE IF NOT EXISTS facture_lignes (id INTEGER PRIMARY KEY AUTOINCREMENT, facture_id INTEGER NOT NULL REFERENCES factures(id) ON DELETE CASCADE, rubrique_id INTEGER REFERENCES rubrique(id), designation TEXT NOT NULL, quantite REAL NOT NULL DEFAULT 1, prix_unitaire REAL NOT NULL DEFAULT 0, tva_id INTEGER REFERENCES tva(id), ordre INTEGER NOT NULL DEFAULT 0)`);
+      await client.execute(`CREATE TABLE IF NOT EXISTS paiements (id INTEGER PRIMARY KEY AUTOINCREMENT, facture_id INTEGER NOT NULL REFERENCES factures(id) ON DELETE CASCADE, date_paiement TEXT NOT NULL DEFAULT (date('now')), montant REAL NOT NULL, mode TEXT NOT NULL DEFAULT 'virement', reference TEXT, notes TEXT, created_by INTEGER REFERENCES utilisateurs(id), created_at TEXT NOT NULL DEFAULT (datetime('now')))`);
+      await client.execute(`CREATE TABLE IF NOT EXISTS decharges (id INTEGER PRIMARY KEY AUTOINCREMENT, facture_id INTEGER NOT NULL REFERENCES factures(id) ON DELETE CASCADE, date_decharge TEXT NOT NULL DEFAULT (date('now')), signataire TEXT, observations TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))`);
+      console.log('✅ factures table recreated with correct schema.');
+    }
+  } catch(e) { console.error('Migration factures error:', e.message); }
+
+  // Vérifier devis.client_id
+  try {
+    const cols = await all("PRAGMA table_info(devis)");
+    const hasClientId = cols.some(c => c.name === 'client_id');
+    if (!hasClientId) {
+      console.log('🔄 Recreating devis table (missing client_id)...');
+      await client.execute('DROP TABLE IF EXISTS devis_lignes');
+      await client.execute('DROP TABLE IF EXISTS devis');
+      await client.execute(`CREATE TABLE devis (id INTEGER PRIMARY KEY AUTOINCREMENT, numero TEXT NOT NULL UNIQUE, dossier_id INTEGER REFERENCES dossiers(id), client_id INTEGER NOT NULL REFERENCES clients(id), date_devis TEXT NOT NULL DEFAULT (date('now')), date_validite TEXT, statut TEXT NOT NULL DEFAULT 'brouillon', objet TEXT, conditions TEXT, notes TEXT, remise_globale REAL NOT NULL DEFAULT 0, created_by INTEGER REFERENCES utilisateurs(id), created_at TEXT NOT NULL DEFAULT (datetime('now')))`);
+      await client.execute(`CREATE TABLE IF NOT EXISTS devis_lignes (id INTEGER PRIMARY KEY AUTOINCREMENT, devis_id INTEGER NOT NULL REFERENCES devis(id) ON DELETE CASCADE, rubrique_id INTEGER REFERENCES rubrique(id), designation TEXT NOT NULL, quantite REAL NOT NULL DEFAULT 1, prix_unitaire REAL NOT NULL DEFAULT 0, tva_id INTEGER REFERENCES tva(id), ordre INTEGER NOT NULL DEFAULT 0)`);
+      console.log('✅ devis table recreated with correct schema.');
+    }
+  } catch(e) { console.error('Migration devis error:', e.message); }
+
+  // Vérifier etapes_dossier.pieces_jointes
+  try {
+    const cols = await all("PRAGMA table_info(etapes_dossier)");
+    const hasPiecesJointes = cols.some(c => c.name === 'pieces_jointes');
+    if (!hasPiecesJointes) {
+      console.log('🔄 Recreating etapes_dossier table (missing pieces_jointes)...');
+      await client.execute('DROP TABLE IF EXISTS etapes_dossier');
+      await client.execute(`CREATE TABLE etapes_dossier (id INTEGER PRIMARY KEY AUTOINCREMENT, dossier_id INTEGER NOT NULL REFERENCES dossiers(id) ON DELETE CASCADE, agent_id INTEGER NOT NULL REFERENCES utilisateurs(id), titre_etape TEXT NOT NULL, description TEXT, pieces_jointes TEXT DEFAULT '[]', statut TEXT NOT NULL DEFAULT 'en_attente', motif_rejet TEXT, valide_par INTEGER REFERENCES utilisateurs(id), date_declaration TEXT NOT NULL DEFAULT (datetime('now')), date_validation TEXT)`);
+      console.log('✅ etapes_dossier table recreated with correct schema.');
+    }
+  } catch(e) { console.error('Migration etapes_dossier error:', e.message); }
+
+  // Vérifier notifications.dossier_id  
+  try {
+    const cols = await all("PRAGMA table_info(notifications)");
+    const hasDossierId = cols.some(c => c.name === 'dossier_id');
+    if (!hasDossierId) {
+      console.log('🔄 Recreating notifications table (missing dossier_id)...');
+      await client.execute('DROP TABLE IF EXISTS notifications');
+      await client.execute(`CREATE TABLE notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES utilisateurs(id) ON DELETE CASCADE, dossier_id INTEGER REFERENCES dossiers(id) ON DELETE CASCADE, etape_id INTEGER REFERENCES etapes_dossier(id) ON DELETE CASCADE, message TEXT NOT NULL, lu INTEGER NOT NULL DEFAULT 0, date_creation TEXT NOT NULL DEFAULT (datetime('now')))`);
+      console.log('✅ notifications table recreated with correct schema.');
+    }
+  } catch(e) { console.error('Migration notifications error:', e.message); }
+
+
   try {
     const tableInfo = await all("PRAGMA table_info(utilisateurs)");
     const hasClientId = tableInfo.some(c => c.name === 'client_id');
