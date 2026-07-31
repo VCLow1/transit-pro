@@ -9,6 +9,10 @@ router.get('/', async (req, res) => {
     const { q='', statut='', page=1, limit=50 } = req.query;
     const offset = (page-1)*limit;
     const conds=[]; const params=[];
+    if (req.user.role === 'client') {
+      conds.push('pa.client_id=?');
+      params.push(req.user.client_id || 0);
+    }
     if (q) { conds.push('(pa.reference LIKE ? OR c.raison_sociale LIKE ? OR pa.transporteur LIKE ?)'); params.push(`%${q}%`,`%${q}%`,`%${q}%`); }
     if (statut) { conds.push('pa.statut=?'); params.push(statut); }
     const where = conds.length ? 'WHERE '+conds.join(' AND ') : '';
@@ -30,6 +34,9 @@ router.get('/:id', async (req, res) => {
                           FROM preavis_arrivee pa JOIN clients c ON pa.client_id=c.id
                           JOIN dossiers d ON pa.dossier_id=d.id WHERE pa.id=?`, [req.params.id]);
     if (!pa) return res.status(404).json({ error: 'Préavis non trouvé' });
+    if (req.user.role === 'client' && pa.client_id !== req.user.client_id) {
+      return res.status(403).json({ error: 'Accès non autorisé' });
+    }
     res.json(pa);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

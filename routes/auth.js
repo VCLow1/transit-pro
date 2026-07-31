@@ -16,12 +16,16 @@ router.post('/login', async (req, res) => {
     const ok = await bcrypt.compare(mot_de_passe, user.mot_de_passe);
     if (!ok) return res.status(401).json({ error: 'Identifiants incorrects' });
 
-    const token = jwt.sign(
-      { id: user.id, login: user.login, nom: user.nom, prenom: user.prenom, role: user.role },
-      JWT_SECRET,
-      { expiresIn: '12h' }
-    );
-    res.json({ token, user: { id: user.id, login: user.login, nom: user.nom, prenom: user.prenom, role: user.role } });
+    const tokenPayload = {
+      id: user.id,
+      login: user.login,
+      nom: user.nom,
+      prenom: user.prenom,
+      role: user.role,
+      client_id: user.client_id || null,
+    };
+    const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '12h' });
+    res.json({ token, user: tokenPayload });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

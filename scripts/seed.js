@@ -61,16 +61,26 @@ async function seed() {
 
   // ── Utilisateurs ─────────────────────────────────────────────────────────
   const hashAdmin = await bcrypt.hash('admin123', 10);
+  const hashSuper = await bcrypt.hash('super123', 10);
   const hashAgent = await bcrypt.hash('agent123', 10);
+  const hashClient = await bcrypt.hash('client123', 10);
 
-  await run('INSERT OR IGNORE INTO utilisateurs (login,mot_de_passe,nom,prenom,email,role) VALUES (?,?,?,?,?,?)',
+  await run(`INSERT INTO utilisateurs (login,mot_de_passe,nom,prenom,email,role) VALUES (?,?,?,?,?,?)
+             ON CONFLICT(login) DO UPDATE SET mot_de_passe=excluded.mot_de_passe, role=excluded.role`,
     ['admin', hashAdmin, 'Ben Salem', 'Karim', 'k.bensalem@bci-transit.tn', 'admin']);
-  await run('INSERT OR IGNORE INTO utilisateurs (login,mot_de_passe,nom,prenom,email,role) VALUES (?,?,?,?,?,?)',
+  await run(`INSERT INTO utilisateurs (login,mot_de_passe,nom,prenom,email,role) VALUES (?,?,?,?,?,?)
+             ON CONFLICT(login) DO UPDATE SET mot_de_passe=excluded.mot_de_passe, role=excluded.role`,
+    ['superviseur', hashSuper, 'Gharbi', 'Leila', 'l.gharbi@bci-transit.tn', 'superviseur']);
+  await run(`INSERT INTO utilisateurs (login,mot_de_passe,nom,prenom,email,role) VALUES (?,?,?,?,?,?)
+             ON CONFLICT(login) DO UPDATE SET mot_de_passe=excluded.mot_de_passe, role=excluded.role`,
     ['agent1', hashAgent, 'Mbarki', 'Sonia', 's.mbarki@bci-transit.tn', 'agent']);
-  await run('INSERT OR IGNORE INTO utilisateurs (login,mot_de_passe,nom,prenom,email,role) VALUES (?,?,?,?,?,?)',
+  await run(`INSERT INTO utilisateurs (login,mot_de_passe,nom,prenom,email,role) VALUES (?,?,?,?,?,?)
+             ON CONFLICT(login) DO UPDATE SET mot_de_passe=excluded.mot_de_passe, role=excluded.role`,
     ['agent2', hashAgent, 'Trabelsi', 'Hedi', 'h.trabelsi@bci-transit.tn', 'agent']);
 
   const admin = await get('SELECT id FROM utilisateurs WHERE login=?', ['admin']);
+  const agent1Obj = await get('SELECT id FROM utilisateurs WHERE login=?', ['agent1']);
+  const agent2Obj = await get('SELECT id FROM utilisateurs WHERE login=?', ['agent2']);
   const uid = admin.id;
 
   // ── Clients ───────────────────────────────────────────────────────────────
@@ -98,15 +108,23 @@ async function seed() {
     clientIds[c.code] = row.id;
   }
 
+  // Création des utilisateurs clients pour la démo
+  await run(`INSERT INTO utilisateurs (login,mot_de_passe,nom,prenom,email,role,client_id) VALUES (?,?,?,?,?,?,?)
+             ON CONFLICT(login) DO UPDATE SET mot_de_passe=excluded.mot_de_passe, role=excluded.role, client_id=excluded.client_id`,
+    ['client1', hashClient, 'STEG', 'Contact', 'import@steg.com.tn', 'client', clientIds['CLI001']]);
+  await run(`INSERT INTO utilisateurs (login,mot_de_passe,nom,prenom,email,role,client_id) VALUES (?,?,?,?,?,?,?)
+             ON CONFLICT(login) DO UPDATE SET mot_de_passe=excluded.mot_de_passe, role=excluded.role, client_id=excluded.client_id`,
+    ['client2', hashClient, 'SOTUPA', 'Contact', 'achat@sotupa.tn', 'client', clientIds['CLI002']]);
+
   // ── Dossiers + Factures + Débours + Préavis ───────────────────────────────
   // Helper to insert a dossier with ref
-  async function mkDossier(ref, cliCode, typeCode, statut, marchandise, pays_origine, desc, createdAt) {
+  async function mkDossier(ref, cliCode, typeCode, statut, marchandise, pays_origine, desc, createdAt, agentId = null) {
     const existing = await get('SELECT id FROM dossiers WHERE reference=?', [ref]);
     if (existing) return existing.id;
     const r = await run(
-      `INSERT INTO dossiers (reference,client_id,type_decl_id,statut,description,marchandise,pays_origine,pays_destination,created_by,created_at,updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      [ref, clientIds[cliCode], TY[typeCode], statut, desc, marchandise, pays_origine,
+      `INSERT INTO dossiers (reference,client_id,type_decl_id,agent_id,statut,description,marchandise,pays_origine,pays_destination,created_by,created_at,updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [ref, clientIds[cliCode], TY[typeCode], agentId, statut, desc, marchandise, pays_origine,
        typeCode === 'E' ? 'France' : 'Tunisie', uid, createdAt, createdAt]
     );
     return r.lastID;
@@ -123,24 +141,24 @@ async function seed() {
   await setCompteur('PREAVIS', 2026, 3);
 
   const dossiers = [
-    // ref,           cli,      type, statut,      marchandise,                    origine,     desc,                          date
-    ['2026I00001','CLI001','I','cloture',  'Câbles électriques HTA',        'Allemagne',  'Import câbles STEG',          '2026-01-10'],
-    ['2026I00002','CLI002','I','cloture',  'Papier recyclé 80g/m²',         'Espagne',    'Import papier SOTUPA',        '2026-01-18'],
-    ['2026I00003','CLI003','I','cloture',  'Aliments bétail — maïs 500T',   'Argentine',  'Maïs fourrage Poulina',       '2026-02-03'],
-    ['2026I00004','CLI005','I','cloture',  'Inox 304L plaques',             'Italie',     'Plaques inox Batinox',        '2026-02-15'],
-    ['2026I00005','CLI006','I','cloture',  'Équipement médical échographe', 'USA',        'Échographe Medtech',          '2026-03-01'],
-    ['2026I00006','CLI007','I','cloture',  'Fils de coton 40/2',            'Inde',       'Fils coton Magic Textiles',   '2026-03-20'],
-    ['2026E00001','CLI007','E','cloture',  'Vêtements confectionnés',       'Italie',     'Export vêtements Magic Tex',  '2026-03-25'],
-    ['2026I00007','CLI008','I','en_cours', 'Composants électroniques',      'Chine',      'Composants Electronics Magh', '2026-04-05'],
-    ['2026I00008','CLI009','I','en_cours', 'Résine PVC 1000T',              'Belgique',   'Résine PVC Chimiplast',       '2026-04-18'],
-    ['2026E00002','CLI003','E','en_cours', 'Huile d\'olive vierge extra',   'France',     'Export huile Poulina',        '2026-05-02'],
-    ['2026I00009','CLI001','I','ouvert',   'Transformateurs HTA 220kV',     'Corée du Sud','Transfo STEG urgence',       '2026-05-20'],
-    ['2026I00010','CLI010','I','ouvert',   'Mobilier de bureau',            'Chine',      'Mobilier Transit Express',   '2026-06-01'],
+    // ref,           cli,      type, statut,      marchandise,                    origine,     desc,                          date,         agent
+    ['2026I00001','CLI001','I','cloture',  'Câbles électriques HTA',        'Allemagne',  'Import câbles STEG',          '2026-01-10', agent1Obj.id],
+    ['2026I00002','CLI002','I','cloture',  'Papier recyclé 80g/m²',         'Espagne',    'Import papier SOTUPA',        '2026-01-18', agent2Obj.id],
+    ['2026I00003','CLI003','I','cloture',  'Aliments bétail — maïs 500T',   'Argentine',  'Maïs fourrage Poulina',       '2026-02-03', agent1Obj.id],
+    ['2026I00004','CLI005','I','cloture',  'Inox 304L plaques',             'Italie',     'Plaques inox Batinox',        '2026-02-15', agent2Obj.id],
+    ['2026I00005','CLI006','I','cloture',  'Équipement médical échographe', 'USA',        'Échographe Medtech',          '2026-03-01', agent1Obj.id],
+    ['2026I00006','CLI007','I','cloture',  'Fils de coton 40/2',            'Inde',       'Fils coton Magic Textiles',   '2026-03-20', agent2Obj.id],
+    ['2026E00001','CLI007','E','cloture',  'Vêtements confectionnés',       'Italie',     'Export vêtements Magic Tex',  '2026-03-25', agent1Obj.id],
+    ['2026I00007','CLI008','I','en_cours', 'Composants électroniques',      'Chine',      'Composants Electronics Magh', '2026-04-05', agent1Obj.id],
+    ['2026I00008','CLI009','I','en_cours', 'Résine PVC 1000T',              'Belgique',   'Résine PVC Chimiplast',       '2026-04-18', agent2Obj.id],
+    ['2026E00002','CLI003','E','en_cours', 'Huile d\'olive vierge extra',   'France',     'Export huile Poulina',        '2026-05-02', agent1Obj.id],
+    ['2026I00009','CLI001','I','ouvert',   'Transformateurs HTA 220kV',     'Corée du Sud','Transfo STEG urgence',       '2026-05-20', agent1Obj.id],
+    ['2026I00010','CLI010','I','ouvert',   'Mobilier de bureau',            'Chine',      'Mobilier Transit Express',   '2026-06-01', agent2Obj.id],
   ];
 
   const dossierIds = {};
-  for (const [ref, cli, type, statut, march, origine, desc, dt] of dossiers) {
-    dossierIds[ref] = await mkDossier(ref, cli, type, statut, march, origine, desc, dt + 'T08:00:00');
+  for (const [ref, cli, type, statut, march, origine, desc, dt, agId] of dossiers) {
+    dossierIds[ref] = await mkDossier(ref, cli, type, statut, march, origine, desc, dt + 'T08:00:00', agId);
   }
 
   // ── Devis ─────────────────────────────────────────────────────────────────
@@ -280,9 +298,24 @@ async function seed() {
   await run("INSERT OR IGNORE INTO dossier_notes (dossier_id,contenu,auteur_id) VALUES (?,?,?)",
     [dossierIds['2026I00009'], "Dossier URGENT — appel client le 20/05. Priorité absolue dès arrivée à Tunis-Carthage.", uid]);
 
+  // ── Étapes de dossier pour la démo ────────────────────────────────────────
+  const dosSTEG = dossierIds['2026I00001'];
+  if (dosSTEG) {
+    const e1 = await run(`INSERT INTO etapes_dossier (dossier_id, agent_id, titre_etape, description, statut, valide_par, date_declaration, date_validation) VALUES (?, ?, ?, ?, 'validee', ?, '2026-01-10 09:00:00', '2026-01-10 10:00:00')`, [dosSTEG, agent1Obj.id, '1. Ouverture du dossier', 'Dossier créé et pièces de base réceptionnées', uid]);
+    const e2 = await run(`INSERT INTO etapes_dossier (dossier_id, agent_id, titre_etape, description, statut, valide_par, date_declaration, date_validation) VALUES (?, ?, ?, ?, 'validee', ?, '2026-01-11 14:00:00', '2026-01-11 15:30:00')`, [dosSTEG, agent1Obj.id, '2. Réception des documents / marchandises', 'Original BL et facture commerciale reçus', uid]);
+    const e3 = await run(`INSERT INTO etapes_dossier (dossier_id, agent_id, titre_etape, description, statut, date_declaration) VALUES (?, ?, ?, ?, 'en_attente', '2026-01-12 11:00:00')`, [dosSTEG, agent1Obj.id, '3. Déclaration en douane', 'Déclaration saisie sur le système TradeNet']);
+  }
+
+  const dosSOTUPA = dossierIds['2026I00002'];
+  if (dosSOTUPA) {
+    await run(`INSERT INTO etapes_dossier (dossier_id, agent_id, titre_etape, description, statut, valide_par, date_declaration, date_validation) VALUES (?, ?, ?, ?, 'validee', ?, '2026-01-18 10:00:00', '2026-01-18 11:00:00')`, [dosSOTUPA, agent2Obj.id, '1. Ouverture du dossier', 'Ouverture effective', uid]);
+    await run(`INSERT INTO etapes_dossier (dossier_id, agent_id, titre_etape, description, statut, motif_rejet, valide_par, date_declaration, date_validation) VALUES (?, ?, ?, ?, 'rejetee', ?, ?, '2026-01-19 15:00:00', '2026-01-19 16:00:00')`, [dosSOTUPA, agent2Obj.id, '2. Réception des documents / marchandises', 'Copie non conforme reçue', 'Documents d\'origine manquants (EUR1 obligatoire)', uid]);
+  }
+
   console.log('✅  Données de démonstration insérées avec succès.');
-  console.log('   Login : admin / admin123   (administrateur)');
-  console.log('   Login : agent1 / agent123  (agent)');
+  console.log('   Superviseur : admin / admin123 ou superviseur / super123');
+  console.log('   Agent       : agent1 / agent123 ou agent2 / agent123');
+  console.log('   Client      : client1 / client123 (STEG) ou client2 / client123 (SOTUPA)');
 }
 
 // Run if called directly

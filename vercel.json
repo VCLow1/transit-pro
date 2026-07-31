@@ -2,14 +2,24 @@
   "version": 2,
   "builds": [
     {
-      "src": "server-complete.js",
-      "use": "@vercel/node"
+      "src": "server.js",
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": [
+          "public/**",
+          "db/schema-simple.sql",
+          "db/schema.sql",
+          "routes/**",
+          "middleware/**",
+          "scripts/seed.js"
+        ]
+      }
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "server-complete.js"
+      "dest": "server.js"
     }
   ]
 }

@@ -8,22 +8,30 @@ const app = express();
 
 app.use(cors());
 app.use(bodyParser.json({ limit: '10mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(process.cwd(), 'public')));
+app.use('/uploads', express.static(path.join(process.cwd(), 'public/uploads')));
 
 // ── API Routes ────────────────────────────────────────────────────────────────
-app.use('/api/auth',        require('./routes/auth'));
-app.use('/api/dashboard',   require('./routes/dashboard'));
-app.use('/api/clients',     require('./routes/clients'));
-app.use('/api/dossiers',    require('./routes/dossiers'));
-app.use('/api/devis',       require('./routes/devis'));
-app.use('/api/factures',    require('./routes/factures'));
-app.use('/api/debours',     require('./routes/debours'));
-app.use('/api/preavis',     require('./routes/preavis'));
-app.use('/api/parametres',  require('./routes/parametres'));
+app.use('/api/auth',          require('./routes/auth'));
+app.use('/api/dashboard',     require('./routes/dashboard'));
+app.use('/api/clients',       require('./routes/clients'));
+app.use('/api/dossiers',      require('./routes/dossiers'));
+app.use('/api/devis',         require('./routes/devis'));
+app.use('/api/factures',      require('./routes/factures'));
+app.use('/api/debours',       require('./routes/debours'));
+app.use('/api/preavis',       require('./routes/preavis'));
+app.use('/api/parametres',    require('./routes/parametres'));
+app.use('/api/etapes',        require('./routes/etapes'));
+app.use('/api/notifications', require('./routes/notifications'));
 
 // ── SPA fallback ──────────────────────────────────────────────────────────────
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  const indexPath = path.join(process.cwd(), 'public', 'index.html');
+  if (require('fs').existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  }
 });
 
 // ── Init DB ───────────────────────────────────────────────────────────────────

@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS utilisateurs (
   nom         TEXT    NOT NULL,
   prenom      TEXT,
   email       TEXT,
-  role        TEXT    NOT NULL DEFAULT 'agent' CHECK(role IN ('admin','agent')),
+  role        TEXT    NOT NULL DEFAULT 'agent' CHECK(role IN ('admin','superviseur','agent','client')),
+  client_id   INTEGER,
   actif       INTEGER NOT NULL DEFAULT 1,
   created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
 );

@@ -14,8 +14,39 @@ function authMiddleware(req, res, next) {
 }
 
 function adminOnly(req, res, next) {
-  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Accès admin requis' });
+  if (!['admin', 'superviseur'].includes(req.user?.role)) {
+    return res.status(403).json({ error: 'Accès superviseur ou admin requis' });
+  }
   next();
 }
 
-module.exports = { authMiddleware, adminOnly, JWT_SECRET };
+function superviseurOnly(req, res, next) {
+  if (!['admin', 'superviseur'].includes(req.user?.role)) {
+    return res.status(403).json({ error: 'Accès superviseur requis' });
+  }
+  next();
+}
+
+function agentOrSuperviseur(req, res, next) {
+  if (!['agent', 'superviseur', 'admin'].includes(req.user?.role)) {
+    return res.status(403).json({ error: 'Accès agent ou superviseur requis' });
+  }
+  next();
+}
+
+function clientOnly(req, res, next) {
+  if (req.user?.role !== 'client') {
+    return res.status(403).json({ error: 'Accès client requis' });
+  }
+  next();
+}
+
+module.exports = {
+  authMiddleware,
+  adminOnly,
+  superviseurOnly,
+  agentOrSuperviseur,
+  clientOnly,
+  JWT_SECRET,
+};
+

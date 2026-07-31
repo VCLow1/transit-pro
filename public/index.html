@@ -4,9 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Transit Pro — Gestion de transit</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
@@ -103,7 +101,24 @@
           </button>
           <h1 class="page-title" id="pageTitle">Tableau de bord</h1>
         </div>
-        <div class="topbar-right" id="topbarActions"></div>
+        <div class="topbar-right">
+          <div class="notif-wrapper">
+            <button class="notif-btn" id="notifBtn" title="Notifications">
+              <svg viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+              <span class="notif-badge hidden" id="notifBadge">0</span>
+            </button>
+            <div class="notif-dropdown hidden" id="notifDropdown">
+              <div class="notif-header">
+                <h3>Notifications</h3>
+                <button id="markAllReadBtn" class="btn-text">Tout marquer comme lu</button>
+              </div>
+              <div class="notif-list" id="notifList">
+                <div class="empty-state-sm">Aucune notification</div>
+              </div>
+            </div>
+          </div>
+          <div id="topbarActions"></div>
+        </div>
       </header>
       <main class="content" id="content">
         <div class="loading-state">

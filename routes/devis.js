@@ -28,7 +28,13 @@ router.get('/', async (req, res) => {
     const conds=[]; const params=[];
     if (q) { conds.push('(dv.numero LIKE ? OR c.raison_sociale LIKE ?)'); params.push(`%${q}%`,`%${q}%`); }
     if (statut) { conds.push('dv.statut=?'); params.push(statut); }
-    if (client_id) { conds.push('dv.client_id=?'); params.push(client_id); }
+    if (req.user.role === 'client') {
+      conds.push('dv.client_id=?');
+      params.push(req.user.client_id || 0);
+    } else if (client_id) {
+      conds.push('dv.client_id=?');
+      params.push(client_id);
+    }
     const where = conds.length ? 'WHERE '+conds.join(' AND ') : '';
 
     const [rows, total] = await Promise.all([
@@ -55,6 +61,9 @@ router.get('/:id', async (req, res) => {
                           FROM devis dv JOIN clients c ON dv.client_id=c.id
                           LEFT JOIN dossiers dos ON dv.dossier_id=dos.id WHERE dv.id=?`, [req.params.id]);
     if (!dv) return res.status(404).json({ error: 'Devis non trouvé' });
+    if (req.user.role === 'client' && dv.client_id !== req.user.client_id) {
+      return res.status(403).json({ error: 'Accès non autorisé' });
+    }
     const lignes = await getLignes('devis_lignes','devis_id',dv.id);
     const tot = await calcTotaux(lignes);
     res.json({ ...dv, lignes, ...tot });

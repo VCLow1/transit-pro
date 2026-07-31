@@ -34,7 +34,13 @@ router.get('/', async (req, res) => {
     const conds = []; const params = [];
     if (q)         { conds.push('(f.numero LIKE ? OR c.raison_sociale LIKE ?)'); params.push(`%${q}%`, `%${q}%`); }
     if (statut)    { conds.push('f.statut=?'); params.push(statut); }
-    if (client_id) { conds.push('f.client_id=?'); params.push(client_id); }
+    if (req.user.role === 'client') {
+      conds.push('f.client_id=?');
+      params.push(req.user.client_id || 0);
+    } else if (client_id) {
+      conds.push('f.client_id=?');
+      params.push(client_id);
+    }
     if (dossier_id){ conds.push('f.dossier_id=?'); params.push(dossier_id); }
     const where = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
 
@@ -66,6 +72,9 @@ router.get('/:id', async (req, res) => {
                          LEFT JOIN devis dv ON f.devis_id=dv.id
                          WHERE f.id=?`, [req.params.id]);
     if (!f) return res.status(404).json({ error: 'Facture non trouvée' });
+    if (req.user.role === 'client' && f.client_id !== req.user.client_id) {
+      return res.status(403).json({ error: 'Accès non autorisé' });
+    }
     const [lignes, paiements, decharges] = await Promise.all([
       getLignes(f.id),
       all('SELECT * FROM paiements WHERE facture_id=? ORDER BY date_paiement DESC', [f.id]),

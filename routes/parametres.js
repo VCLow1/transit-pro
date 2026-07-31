@@ -98,38 +98,48 @@ router.delete('/rubriques/:id', async (req, res) => {
   catch(e){ res.status(500).json({error:e.message}); }
 });
 
-// ── Utilisateurs (admin only) ─────────────────────────────────────────────────
+// ── Utilisateurs (admin / superviseur) ─────────────────────────────────────────
 router.get('/utilisateurs', adminOnly, async (_, res) => {
-  try { res.json(await all('SELECT id,login,nom,prenom,email,role,actif,created_at FROM utilisateurs ORDER BY nom')); }
-  catch(e){ res.status(500).json({error:e.message}); }
+  try {
+    res.json(await all(`
+      SELECT u.id, u.login, u.nom, u.prenom, u.email, u.role, u.client_id, u.actif, u.created_at,
+             c.raison_sociale client_nom
+      FROM utilisateurs u
+      LEFT JOIN clients c ON u.client_id = c.id
+      ORDER BY u.nom
+    `));
+  } catch(e){ res.status(500).json({error:e.message}); }
 });
+
 router.post('/utilisateurs', adminOnly, async (req, res) => {
   try {
-    const { login, mot_de_passe, nom, prenom, email, role } = req.body;
+    const { login, mot_de_passe, nom, prenom, email, role, client_id } = req.body;
     if (!login || !mot_de_passe || !nom) return res.status(400).json({ error: 'Login, mot de passe et nom requis' });
     const hash = await bcrypt.hash(mot_de_passe, 10);
-    const r = await run('INSERT INTO utilisateurs (login,mot_de_passe,nom,prenom,email,role) VALUES (?,?,?,?,?,?)',
-      [login, hash, nom, prenom||null, email||null, role||'agent']);
+    const r = await run('INSERT INTO utilisateurs (login,mot_de_passe,nom,prenom,email,role,client_id) VALUES (?,?,?,?,?,?,?)',
+      [login, hash, nom, prenom||null, email||null, role||'agent', client_id||null]);
     res.status(201).json({ id: r.lastID });
   } catch(e){
     if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Login déjà utilisé' });
     res.status(500).json({error:e.message});
   }
 });
+
 router.put('/utilisateurs/:id', adminOnly, async (req, res) => {
   try {
-    const { nom, prenom, email, role, actif, mot_de_passe } = req.body;
+    const { nom, prenom, email, role, client_id, actif, mot_de_passe } = req.body;
     if (mot_de_passe) {
       const hash = await bcrypt.hash(mot_de_passe, 10);
-      await run('UPDATE utilisateurs SET nom=?,prenom=?,email=?,role=?,actif=?,mot_de_passe=? WHERE id=?',
-        [nom, prenom||null, email||null, role||'agent', actif!==undefined?actif:1, hash, req.params.id]);
+      await run('UPDATE utilisateurs SET nom=?,prenom=?,email=?,role=?,client_id=?,actif=?,mot_de_passe=? WHERE id=?',
+        [nom, prenom||null, email||null, role||'agent', client_id||null, actif!==undefined?actif:1, hash, req.params.id]);
     } else {
-      await run('UPDATE utilisateurs SET nom=?,prenom=?,email=?,role=?,actif=? WHERE id=?',
-        [nom, prenom||null, email||null, role||'agent', actif!==undefined?actif:1, req.params.id]);
+      await run('UPDATE utilisateurs SET nom=?,prenom=?,email=?,role=?,client_id=?,actif=? WHERE id=?',
+        [nom, prenom||null, email||null, role||'agent', client_id||null, actif!==undefined?actif:1, req.params.id]);
     }
     res.json({ message: 'Utilisateur mis à jour' });
   } catch(e){ res.status(500).json({error:e.message}); }
 });
+
 router.delete('/utilisateurs/:id', adminOnly, async (req, res) => {
   try {
     if (req.user.id == req.params.id) return res.status(400).json({ error: 'Impossible de supprimer son propre compte' });
