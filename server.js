@@ -79,10 +79,19 @@ if (require.main === module) {
 }
 
 // ── Vercel serverless export ──────────────────────────────────────────────────
-// Wrap app to ensure DB is initialized before handling requests
 const handler = async (req, res) => {
-  await ensureDb();
-  app(req, res);
+  try {
+    await ensureDb();
+    app(req, res);
+  } catch (err) {
+    console.error('Vercel Serverless Error:', err);
+    res.status(500).json({
+      error: 'Erreur Serveur Vercel',
+      message: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+      hint: 'Vérifiez la configuration des variables TURSO_DATABASE_URL et TURSO_AUTH_TOKEN sur Vercel.'
+    });
+  }
 };
 
 module.exports = handler;

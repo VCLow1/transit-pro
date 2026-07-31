@@ -7,16 +7,27 @@ const dbPath = isVercel
   ? '/tmp/transit.db'
   : path.join(__dirname, 'transit.db');
 
-const client = createClient(
-  process.env.TURSO_DATABASE_URL
-    ? {
-        url: process.env.TURSO_DATABASE_URL,
-        authToken: process.env.TURSO_AUTH_TOKEN,
-      }
-    : {
-        url: 'file:' + dbPath,
-      }
-);
+const tursoUrl = process.env.TURSO_DATABASE_URL ? process.env.TURSO_DATABASE_URL.trim() : '';
+const tursoToken = process.env.TURSO_AUTH_TOKEN ? process.env.TURSO_AUTH_TOKEN.trim() : '';
+
+let clientConfig;
+if (tursoUrl) {
+  clientConfig = {
+    url: tursoUrl,
+    authToken: tursoToken,
+  };
+} else if (isVercel) {
+  console.warn('⚠️ Attention: TURSO_DATABASE_URL non configurée dans l\'environnement Vercel.');
+  clientConfig = {
+    url: 'file:' + dbPath,
+  };
+} else {
+  clientConfig = {
+    url: 'file:' + dbPath,
+  };
+}
+
+const client = createClient(clientConfig);
 
 async function run(sql, params = []) {
   const result = await client.execute({ sql, args: params });
