@@ -157,6 +157,75 @@ async function initDb() {
     }
   }
   try { await client.execute('ALTER TABLE dossiers ADD COLUMN agent_id INTEGER'); } catch (_) {}
+
+  // ── Migrations colonnes manquantes ─────────────────────────────────────────
+  // factures
+  const migrationsFactures = [
+    'ALTER TABLE factures ADD COLUMN client_id INTEGER',
+    'ALTER TABLE factures ADD COLUMN devis_id INTEGER',
+    'ALTER TABLE factures ADD COLUMN conditions TEXT',
+    'ALTER TABLE factures ADD COLUMN remise_globale REAL NOT NULL DEFAULT 0',
+  ];
+  for (const m of migrationsFactures) { try { await client.execute(m); } catch (_) {} }
+
+  // devis
+  const migrationsDevis = [
+    'ALTER TABLE devis ADD COLUMN client_id INTEGER',
+    'ALTER TABLE devis ADD COLUMN conditions TEXT',
+    'ALTER TABLE devis ADD COLUMN remise_globale REAL NOT NULL DEFAULT 0',
+  ];
+  for (const m of migrationsDevis) { try { await client.execute(m); } catch (_) {} }
+
+  // dossiers
+  const migrationsDossiers = [
+    'ALTER TABLE dossiers ADD COLUMN valeur_douane REAL DEFAULT 0',
+    'ALTER TABLE dossiers ADD COLUMN devise TEXT DEFAULT \'TND\'',
+    'ALTER TABLE dossiers ADD COLUMN incoterm TEXT',
+    'ALTER TABLE dossiers ADD COLUMN observations TEXT',
+  ];
+  for (const m of migrationsDossiers) { try { await client.execute(m); } catch (_) {} }
+
+  // debours
+  const migrationsDebours = [
+    'ALTER TABLE debours ADD COLUMN justificatif TEXT',
+    'ALTER TABLE debours ADD COLUMN facture_id INTEGER',
+    'ALTER TABLE debours ADD COLUMN notes TEXT',
+  ];
+  for (const m of migrationsDebours) { try { await client.execute(m); } catch (_) {} }
+
+  // preavis_arrivee
+  const migrationsPreavis = [
+    'ALTER TABLE preavis_arrivee ADD COLUMN client_id INTEGER',
+    'ALTER TABLE preavis_arrivee ADD COLUMN email_notif_envoye INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE preavis_arrivee ADD COLUMN notes TEXT',
+  ];
+  for (const m of migrationsPreavis) { try { await client.execute(m); } catch (_) {} }
+
+  // etapes_dossier
+  const migrationsEtapes = [
+    'ALTER TABLE etapes_dossier ADD COLUMN pieces_jointes TEXT DEFAULT \'[]\'',
+    'ALTER TABLE etapes_dossier ADD COLUMN motif_rejet TEXT',
+    'ALTER TABLE etapes_dossier ADD COLUMN date_validation TEXT',
+  ];
+  for (const m of migrationsEtapes) { try { await client.execute(m); } catch (_) {} }
+
+  // notifications
+  const migrationsNotifications = [
+    'ALTER TABLE notifications ADD COLUMN dossier_id INTEGER',
+    'ALTER TABLE notifications ADD COLUMN etape_id INTEGER',
+  ];
+  for (const m of migrationsNotifications) { try { await client.execute(m); } catch (_) {} }
+
+  // clients
+  const migrationsClients = [
+    'ALTER TABLE clients ADD COLUMN fax TEXT',
+    'ALTER TABLE clients ADD COLUMN contact TEXT',
+    'ALTER TABLE clients ADD COLUMN tva_num TEXT',
+    'ALTER TABLE clients ADD COLUMN notes TEXT',
+  ];
+  for (const m of migrationsClients) { try { await client.execute(m); } catch (_) {} }
+
+  console.log('✅ Schema initialisé');
 }
 
 // Generate next document number
