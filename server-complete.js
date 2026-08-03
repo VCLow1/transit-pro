@@ -1233,9 +1233,197 @@ app.get('/debug-static', (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════════
+//  ESPACE CLIENT — Portail libre-service pour les clients
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+// Middleware d'auth client
+function authClient(req, res, next) {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Token manquant' });
+  }
+  try {
+    const decoded = jwt.verify(auth.slice(7), process.env.JWT_SECRET || 'jwt_secret_key');
+    if (decoded.type !== 'client') {
+      return res.status(403).json({ error: 'Accès réservé aux clients' });
+    }
+    req.clientId = decoded.clientId;
+    req.clientCode = decoded.clientCode;
+    next();
+  } catch {
+    res.status(401).json({ error: 'Token invalide ou expiré' });
+  }
+}
+
+// Login espace client
+app.post('/api/client-portal/login', (req, res) => {
+  try {
+    const { code, mot_de_passe } = req.body;
+    if (!code || !mot_de_passe) {
+      return res.status(400).json({ error: 'Code et mot de passe requis' });
+    }
+
+    // Trouver le client par son code
+    const client = mockData.clients.find(
+      c => c.code.toLowerCase() === code.trim().toLowerCase()
+    );
+
+    if (!client) {
+      return res.status(401).json({ error: 'Code client ou mot de passe incorrect' });
+    }
+
+    // Mot de passe par défaut = les 4 derniers chiffres du NIF ou "client123"
+    const defaultPass = client.nif
+      ? client.nif.replace(/\D/g, '').slice(-4) || 'client123'
+      : 'client123';
+
+    if (mot_de_passe !== defaultPass && mot_de_passe !== 'client123') {
+      return res.status(401).json({ error: 'Code client ou mot de passe incorrect' });
+    }
+
+    const token = jwt.sign(
+      { type: 'client', clientId: client.id, clientCode: client.code },
+      process.env.JWT_SECRET || 'jwt_secret_key',
+      { expiresIn: '8h' }
+    );
+
+    res.json({
+      token,
+      client: {
+        id: client.id,
+        code: client.code,
+        raison_sociale: client.raison_sociale,
+        ville: client.ville,
+        email: client.email
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Profil client connecté
+app.get('/api/client-portal/me', authClient, (req, res) => {
+  const client = mockData.clients.find(c => c.id === req.clientId);
+  if (!client) return res.status(404).json({ error: 'Client non trouvé' });
+  res.json(client);
+});
+
+// Tableau de bord client — ses propres statistiques
+app.get('/api/client-portal/dashboard', authClient, (req, res) => {
+  try {
+    const cid = req.clientId;
+    const dossiers = mockData.dossiers.filter(d => d.client_id === cid);
+    const factures = mockData.factures.filter(f => f.client_id === cid);
+    const preavis  = mockData.preavis.filter(p => p.client_id === cid);
+
+    const stats = {
+      dossiers_total:     dossiers.length,
+      dossiers_en_cours:  dossiers.filter(d => d.statut === 'en_cours').length,
+      dossiers_ouverts:   dossiers.filter(d => d.statut === 'ouvert').length,
+      dossiers_clotures:  dossiers.filter(d => d.statut === 'cloture').length,
+      factures_total:     factures.length,
+      factures_impayees:  factures.filter(f => ['emise','brouillon','partielle'].includes(f.statut)).length,
+      solde_du:           factures.reduce((s, f) => s + (f.solde_du || 0), 0),
+      ca_total:           factures.reduce((s, f) => s + (f.total_ttc || 0), 0),
+      preavis_en_attente: preavis.filter(p => p.statut === 'en_attente').length
+    };
+
+    res.json({
+      stats,
+      derniers_dossiers:  dossiers.slice(-5).reverse(),
+      dernieres_factures: factures.slice(-5).reverse(),
+      prochains_preavis:  preavis.filter(p => p.statut === 'en_attente')
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Dossiers du client
+app.get('/api/client-portal/dossiers', authClient, (req, res) => {
+  try {
+    const { q = '', statut = '' } = req.query;
+    let dossiers = mockData.dossiers.filter(d => d.client_id === req.clientId);
+
+    if (q) {
+      const s = q.toLowerCase();
+      dossiers = dossiers.filter(d =>
+        d.numero?.toLowerCase().includes(s) ||
+        d.marchandise?.toLowerCase().includes(s) ||
+        d.description?.toLowerCase().includes(s)
+      );
+    }
+    if (statut) dossiers = dossiers.filter(d => d.statut === statut);
+
+    res.json({ data: dossiers, total: dossiers.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Détail d'un dossier (vérifie que le dossier appartient au client)
+app.get('/api/client-portal/dossiers/:id', authClient, (req, res) => {
+  try {
+    const dossier = mockData.dossiers.find(
+      d => d.id === parseInt(req.params.id) && d.client_id === req.clientId
+    );
+    if (!dossier) return res.status(404).json({ error: 'Dossier non trouvé' });
+
+    dossier.factures = mockData.factures.filter(f => f.dossier_id === dossier.id);
+    dossier.debours  = mockData.debours.filter(d => d.dossier_id === dossier.id);
+    dossier.preavis  = mockData.preavis.filter(p => p.dossier_id === dossier.id);
+    res.json(dossier);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Factures du client
+app.get('/api/client-portal/factures', authClient, (req, res) => {
+  try {
+    const { statut = '' } = req.query;
+    let factures = mockData.factures.filter(f => f.client_id === req.clientId);
+    if (statut) factures = factures.filter(f => f.statut === statut);
+    res.json({ data: factures, total: factures.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Préavis du client
+app.get('/api/client-portal/preavis', authClient, (req, res) => {
+  try {
+    const preavis = mockData.preavis.filter(p => p.client_id === req.clientId);
+    res.json({ data: preavis, total: preavis.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Servir la page Espace Client
+app.get('/client', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'client.html'));
+});
+app.get('/client-portal', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'client.html'));
+});
+
 // Fallback for SPA
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+
+// ── Local dev server ──────────────────────────────────────────────────────────────
+if (require.main === module) {
+  const PORT = process.env.PORT || 3001;
+  app.listen(PORT, () => {
+    console.log(`\n🚢 Transit Pro → http://localhost:${PORT}`);
+    console.log(`👤 Espace Client → http://localhost:${PORT}/client\n`);
+    console.log('   Admin : admin / admin123');
+    console.log('   Client demo : CLI001 / 7890\n');
+  });
+}
 
 module.exports = app;

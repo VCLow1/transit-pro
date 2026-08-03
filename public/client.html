@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Transit Pro — Espace Client</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
+  <style>
+    /* ── Portal extra styles ── */
+    .portal-shell { display:flex; height:100vh; overflow:hidden; }
+    .portal-sidebar { width:220px; background:var(--surface); border-right:1px solid var(--border);
+      display:flex; flex-direction:column; flex-shrink:0; }
+    .portal-brand { padding:18px 16px; border-bottom:1px solid var(--border); }
+    .portal-brand-title { font-size:15px; font-weight:700; color:var(--accent); }
+    .portal-brand-sub { font-size:11px; color:var(--text2); margin-top:2px; }
+    .portal-nav { padding:10px 8px; flex:1; display:flex; flex-direction:column; gap:2px; }
+    .portal-footer { padding:12px 8px; border-top:1px solid var(--border); }
+    .client-chip { background:var(--accent-light); border-radius:8px; padding:10px 12px; margin-bottom:8px; }
+    .client-chip-name { font-size:13px; font-weight:600; color:var(--accent); }
+    .client-chip-code { font-size:11px; color:var(--text2); }
+
+    /* ── KPI row ── */
+    .kpi-row { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:14px; margin-bottom:22px; }
+    .kpi-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg);
+      padding:16px 18px; border-left:4px solid var(--accent); }
+    .kpi-card.green  { border-left-color:var(--success); }
+    .kpi-card.orange { border-left-color:var(--warning); }
+    .kpi-card.red    { border-left-color:var(--danger); }
+    .kpi-card.blue   { border-left-color:var(--info); }
+    .kpi-val { font-size:24px; font-weight:700; line-height:1.2; }
+    .kpi-lbl { font-size:11px; font-weight:600; color:var(--text2); text-transform:uppercase;
+      letter-spacing:.5px; margin-top:4px; }
+
+    /* ── Timeline ── */
+    .timeline { display:flex; flex-direction:column; gap:0; }
+    .tl-item { display:flex; gap:14px; padding:12px 0; border-bottom:1px solid var(--border); }
+    .tl-item:last-child { border-bottom:none; }
+    .tl-dot { width:10px; height:10px; border-radius:50%; background:var(--accent);
+      flex-shrink:0; margin-top:4px; }
+    .tl-dot.green  { background:var(--success); }
+    .tl-dot.orange { background:var(--warning); }
+    .tl-dot.red    { background:var(--danger); }
+    .tl-body { flex:1; min-width:0; }
+    .tl-title { font-size:13px; font-weight:500; }
+    .tl-sub { font-size:11px; color:var(--text2); margin-top:2px; }
+
+    /* ── Login ── */
+    .portal-login { min-height:100vh; display:flex; align-items:center; justify-content:center;
+      background:linear-gradient(135deg,#0f172a 0%,#1e40af 60%,#6c47ff 100%); }
+    .portal-login-card { background:var(--surface); border-radius:20px; padding:40px;
+      width:100%; max-width:380px; box-shadow:0 24px 64px rgba(0,0,0,.3); animation:fadeUp .4s ease; }
+    .portal-login-logo { text-align:center; margin-bottom:28px; }
+    .portal-login-logo .logo-icon { font-size:44px; }
+    .portal-login-logo h1 { font-size:22px; font-weight:700; color:var(--accent); margin-top:6px; }
+    .portal-login-logo p { font-size:12px; color:var(--text2); margin-top:4px; }
+    .back-link { display:inline-flex; align-items:center; gap:6px; font-size:12px;
+      color:var(--text2); margin-top:16px; cursor:pointer; }
+    .back-link:hover { color:var(--accent); }
+  </style>
+</head>
+<body>
+
+<!-- ── LOGIN ──────────────────────────────────────────────── -->
+<div id="portalLogin" class="portal-login">
+  <div class="portal-login-card">
+    <div class="portal-login-logo">
+      <div class="logo-icon">🚢</div>
+      <h1>Espace Client</h1>
+      <p>Transit Pro — Portail client</p>
+    </div>
+    <form id="portalLoginForm" class="login-form">
+      <div class="field-group">
+        <label>Code Client</label>
+        <input type="text" id="portalCode" placeholder="CLI001" autocomplete="username" required/>
+      </div>
+      <div class="field-group">
+        <label>Mot de passe</label>
+        <input type="password" id="portalPass" placeholder="••••••••" autocomplete="current-password" required/>
+      </div>
+      <div id="portalError" class="login-error hidden"></div>
+      <button type="submit" class="btn btn-primary btn-full" id="portalLoginBtn">
+        <span>Accéder à mon espace</span>
+      </button>
+      <div style="text-align:center;margin-top:14px">
+        <a href="/" class="back-link">← Retour à l'administration</a>
+      </div>
+      <div style="background:var(--surface2);border-radius:8px;padding:10px 14px;margin-top:14px;font-size:12px;color:var(--text2)">
+        <strong>Accès demo :</strong> Code <code>CLI001</code> — Mot de passe <code>7890</code>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ── APP PORTAIL ────────────────────────────────────────── -->
+<div id="portalApp" class="portal-shell hidden">
+  <!-- Sidebar -->
+  <aside class="portal-sidebar">
+    <div class="portal-brand">
+      <div style="font-size:22px;margin-bottom:4px">🚢</div>
+      <div class="portal-brand-title">Espace Client</div>
+      <div class="portal-brand-sub">Transit Pro</div>
+    </div>
+    <nav class="portal-nav">
+      <a class="nav-link active" id="pnav-dashboard" onclick="pNavigate('dashboard')">
+        <svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+        <span>Tableau de bord</span>
+      </a>
+      <a class="nav-link" id="pnav-dossiers" onclick="pNavigate('dossiers')">
+        <svg viewBox="0 0 24 24"><path d="M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2z"/></svg>
+        <span>Mes Dossiers</span>
+      </a>
+      <a class="nav-link" id="pnav-factures" onclick="pNavigate('factures')">
+        <svg viewBox="0 0 24 24"><path d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>
+        <span>Mes Factures</span>
+      </a>
+      <a class="nav-link" id="pnav-preavis" onclick="pNavigate('preavis')">
+        <svg viewBox="0 0 24 24"><path d="M20 3H4v10c0 2.21 1.79 4 4 4h6c2.21 0 4-1.79 4-4v-3h2c1.11 0 2-.89 2-2V5c0-1.11-.89-2-2-2zm0 5h-2V5h2v3zM4 19h16v2H4z"/></svg>
+        <span>Préavis d'arrivée</span>
+      </a>
+    </nav>
+    <div class="portal-footer">
+      <div class="client-chip">
+        <div class="client-chip-name" id="pClientName">—</div>
+        <div class="client-chip-code" id="pClientCode">—</div>
+      </div>
+      <button class="btn btn-ghost" style="width:100%;justify-content:center;font-size:12px" onclick="pLogout()">
+        <svg viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
+        Déconnexion
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="main-wrapper">
+    <header class="topbar">
+      <div class="topbar-left">
+        <h1 class="page-title" id="pPageTitle">Tableau de bord</h1>
+      </div>
+      <div class="topbar-right">
+        <a href="/" class="btn btn-secondary btn-sm">Admin →</a>
+      </div>
+    </header>
+    <main class="content" id="pContent">
+      <div class="loading-state"><div class="spinner"></div></div>
+    </main>
+  </div>
+</div>
+
+<div id="toasts" aria-live="polite"></div>
+
+<script>
+const PAPI = '/api/client-portal';
+let pToken = localStorage.getItem('portal_token');
+let pClient = null;
+
+// ── Helpers ──────────────────────────────────────────────────
+async function pApi(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (pToken) opts.headers['Authorization'] = 'Bearer ' + pToken;
+  if (body !== undefined) opts.body = JSON.stringify(body);
+  const res = await fetch(PAPI + path, opts);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Erreur ' + res.status);
+  return data;
+}
+
+function fmtMoney(n) {
+  if (n == null || n === '') return '—';
+  return Number(n).toLocaleString('fr-TN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' TND';
+}
+function fmtDate(s) {
+  if (!s) return '—';
+  const d = new Date(s); if (isNaN(d)) return s;
+  return d.toLocaleDateString('fr-FR');
+}
+function esc(s) {
+  if (!s) return '—';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function badge(statut) {
+  const map = {
+    ouvert:'info', en_cours:'warning', cloture:'neutral',
+    brouillon:'neutral', emise:'info', payee:'success', partielle:'warning', annulee:'danger',
+    en_attente:'warning', arrive:'info', traite:'success'
+  };
+  const lbl = {
+    ouvert:'Ouvert', en_cours:'En cours', cloture:'Clôturé',
+    brouillon:'Brouillon', emise:'Émise', payee:'Payée', partielle:'Partielle', annulee:'Annulée',
+    en_attente:'En attente', arrive:'Arrivé', traite:'Traité'
+  };
+  return `<span class="badge badge-${map[statut]||'neutral'}">${lbl[statut]||statut}</span>`;
+}
+function toast(msg, type='success') {
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.textContent = msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// ── Login ─────────────────────────────────────────────────────
+document.getElementById('portalLoginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = document.getElementById('portalLoginBtn');
+  btn.disabled = true; btn.querySelector('span').textContent = 'Connexion…';
+  document.getElementById('portalError').classList.add('hidden');
+  try {
+    const data = await fetch(PAPI + '/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: document.getElementById('portalCode').value.trim(),
+        mot_de_passe: document.getElementById('portalPass').value
+      })
+    }).then(r => r.json());
+
+    if (data.error) throw new Error(data.error);
+
+    pToken = data.token;
+    pClient = data.client;
+    localStorage.setItem('portal_token', pToken);
+    showPortal();
+  } catch (err) {
+    const el = document.getElementById('portalError');
+    el.textContent = err.message;
+    el.classList.remove('hidden');
+  } finally {
+    btn.disabled = false; btn.querySelector('span').textContent = 'Accéder à mon espace';
+  }
+});
+
+function showPortal() {
+  document.getElementById('portalLogin').classList.add('hidden');
+  document.getElementById('portalApp').classList.remove('hidden');
+  document.getElementById('pClientName').textContent = pClient.raison_sociale;
+  document.getElementById('pClientCode').textContent = pClient.code;
+  pNavigate('dashboard');
+}
+
+function pLogout() {
+  pToken = null; pClient = null;
+  localStorage.removeItem('portal_token');
+  document.getElementById('portalApp').classList.add('hidden');
+  document.getElementById('portalLogin').classList.remove('hidden');
+}
+
+function pNavigate(page) {
+  document.querySelectorAll('.portal-nav .nav-link').forEach(l => l.classList.remove('active'));
+  const nav = document.getElementById('pnav-' + page);
+  if (nav) nav.classList.add('active');
+  const titles = {
+    dashboard: 'Tableau de bord',
+    dossiers: 'Mes Dossiers',
+    factures: 'Mes Factures',
+    preavis: "Préavis d'arrivée"
+  };
+  document.getElementById('pPageTitle').textContent = titles[page] || page;
+  ({ dashboard: pDashboard, dossiers: pDossiers, factures: pFactures, preavis: pPreavis })[page]();
+}
+</script>
+
+<script>
+// ── DASHBOARD ────────────────────────────────────────────────
+async function pDashboard() {
+  document.getElementById('pContent').innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  try {
+    const d = await pApi('GET', '/dashboard');
+    const s = d.stats;
+
+    const dosRows = (d.derniers_dossiers || []).map(dos => `
+      <div class="tl-item">
+        <div class="tl-dot ${dos.statut==='en_cours'?'orange':dos.statut==='cloture'?'':'blue'}"></div>
+        <div class="tl-body">
+          <div class="tl-title">${esc(dos.numero)} — ${esc(dos.marchandise||dos.description||'—')}</div>
+          <div class="tl-sub">${esc(dos.type_libelle)} · ${badge(dos.statut)} · ${fmtDate(dos.created_at)}</div>
+        </div>
+      </div>`).join('') || '<p class="text-muted text-sm" style="padding:16px">Aucun dossier</p>';
+
+    const facRows = (d.dernieres_factures || []).map(f => `
+      <div class="tl-item">
+        <div class="tl-dot ${f.statut==='payee'?'green':f.statut==='emise'?'blue':'orange'}"></div>
+        <div class="tl-body">
+          <div class="tl-title">${esc(f.numero)} — ${fmtMoney(f.total_ttc)}</div>
+          <div class="tl-sub">${badge(f.statut)} · ${fmtDate(f.date_facture)}</div>
+        </div>
+      </div>`).join('') || '<p class="text-muted text-sm" style="padding:16px">Aucune facture</p>';
+
+    const preRows = (d.prochains_preavis || []).map(p => `
+      <div class="tl-item">
+        <div class="tl-dot orange"></div>
+        <div class="tl-body">
+          <div class="tl-title">${esc(p.transporteur||p.reference)} — ${esc(p.provenance||'—')}</div>
+          <div class="tl-sub">
+            ${{maritime:'🚢',aerien:'✈️',routier:'🚛',ferroviaire:'🚂'}[p.moyen_transport]||'📦'} 
+            Arrivée prévue : ${fmtDate(p.date_arrivee_prevue)}
+          </div>
+        </div>
+      </div>`).join('') || '<p class="text-muted text-sm" style="padding:16px">Aucun préavis en attente</p>';
+
+    document.getElementById('pContent').innerHTML = `
+      <div class="kpi-row">
+        <div class="kpi-card blue">
+          <div class="kpi-val">${s.dossiers_total}</div>
+          <div class="kpi-lbl">Dossiers total</div>
+        </div>
+        <div class="kpi-card orange">
+          <div class="kpi-val">${s.dossiers_en_cours}</div>
+          <div class="kpi-lbl">En cours</div>
+        </div>
+        <div class="kpi-card red">
+          <div class="kpi-val">${s.factures_impayees}</div>
+          <div class="kpi-lbl">Factures impayées</div>
+        </div>
+        <div class="kpi-card green">
+          <div class="kpi-val" style="font-size:16px">${fmtMoney(s.ca_total)}</div>
+          <div class="kpi-lbl">Total facturé</div>
+        </div>
+        <div class="kpi-card red">
+          <div class="kpi-val" style="font-size:16px">${fmtMoney(s.solde_du)}</div>
+          <div class="kpi-lbl">Solde dû</div>
+        </div>
+        <div class="kpi-card orange">
+          <div class="kpi-val">${s.preavis_en_attente}</div>
+          <div class="kpi-lbl">Préavis en attente</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+        <div class="card">
+          <div class="card-header"><span class="card-title">Derniers dossiers</span></div>
+          <div class="timeline">${dosRows}</div>
+        </div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Dernières factures</span></div>
+          <div class="timeline">${facRows}</div>
+        </div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Préavis en attente</span></div>
+          <div class="timeline">${preRows}</div>
+        </div>
+      </div>`;
+  } catch (e) {
+    document.getElementById('pContent').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>${e.message}</p></div>`;
+  }
+}
+
+// ── DOSSIERS ─────────────────────────────────────────────────
+async function pDossiers() {
+  document.getElementById('pContent').innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  try {
+    const d = await pApi('GET', '/dossiers');
+    const rows = d.data.map(dos => `
+      <tr onclick="pDossierDetail(${dos.id})" style="cursor:pointer">
+        <td class="td-mono fw-600">${esc(dos.numero)}</td>
+        <td><span class="badge badge-${dos.type_code==='I'?'info':dos.type_code==='E'?'warning':'neutral'}">${esc(dos.type_libelle)}</span></td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(dos.marchandise||dos.description||'—')}</td>
+        <td>${esc(dos.pays_origine||dos.pays_destination||'—')}</td>
+        <td>${badge(dos.statut)}</td>
+        <td>${fmtDate(dos.created_at)}</td>
+      </tr>`).join('') ||
+      `<tr><td colspan="6"><div class="empty"><div class="empty-icon">📁</div><p>Aucun dossier</p></div></td></tr>`;
+
+    document.getElementById('pContent').innerHTML = `
+      <div class="card">
+        <div class="toolbar" style="margin-bottom:16px">
+          <div class="search-box">
+            <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+            <input type="text" id="pDosSearch" placeholder="Rechercher…" oninput="pFilterDossiers(this.value,'${JSON.stringify(d.data).replace(/'/g,"\\'")}')"/>
+          </div>
+          <span class="text-muted text-sm">${d.total} dossier(s)</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Référence</th><th>Type</th><th>Marchandise</th><th>Pays</th><th>Statut</th><th>Date</th></tr></thead>
+            <tbody id="pDosBody">${rows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  } catch (e) {
+    document.getElementById('pContent').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>${e.message}</p></div>`;
+  }
+}
+
+async function pDossierDetail(id) {
+  try {
+    const dos = await pApi('GET', `/dossiers/${id}`);
+    const facRows = (dos.factures||[]).map(f =>
+      `<tr><td class="td-mono">${esc(f.numero)}</td><td>${fmtDate(f.date_facture)}</td><td>${badge(f.statut)}</td><td class="fw-600">${fmtMoney(f.total_ttc)}</td></tr>`
+    ).join('') || '<tr><td colspan="4" class="text-muted text-sm">Aucune facture</td></tr>';
+    const debRows = (dos.debours||[]).map(d =>
+      `<tr><td>${fmtDate(d.date_debours)}</td><td>${esc(d.libelle)}</td><td>${esc(d.beneficiaire)}</td><td>${fmtMoney(d.montant)}</td></tr>`
+    ).join('') || '<tr><td colspan="4" class="text-muted text-sm">Aucun débours</td></tr>';
+    const preRows = (dos.preavis||[]).map(p =>
+      `<tr><td class="td-mono">${esc(p.reference)}</td><td>${esc(p.transporteur)}</td><td>${fmtDate(p.date_arrivee_prevue)}</td><td>${badge(p.statut)}</td></tr>`
+    ).join('') || '<tr><td colspan="4" class="text-muted text-sm">Aucun préavis</td></tr>';
+
+    document.getElementById('pContent').innerHTML = `
+      <div style="margin-bottom:18px">
+        <button class="btn btn-secondary btn-sm" onclick="pDossiers()">← Retour</button>
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="detail-header">
+          <div>
+            <div class="detail-title">${esc(dos.numero)}</div>
+            <div class="detail-subtitle">${esc(dos.type_libelle)} — ${esc(dos.marchandise||dos.description||'—')}</div>
+          </div>
+          <div>${badge(dos.statut)}</div>
+        </div>
+        <div class="detail-grid">
+          <div class="detail-item"><div class="detail-label">Type</div><div class="detail-value">${esc(dos.type_libelle)}</div></div>
+          <div class="detail-item"><div class="detail-label">Marchandise</div><div class="detail-value">${esc(dos.marchandise||'—')}</div></div>
+          <div class="detail-item"><div class="detail-label">Pays origine</div><div class="detail-value">${esc(dos.pays_origine||'—')}</div></div>
+          <div class="detail-item"><div class="detail-label">Pays destination</div><div class="detail-value">${esc(dos.pays_destination||'—')}</div></div>
+          <div class="detail-item"><div class="detail-label">Incoterm</div><div class="detail-value">${esc(dos.incoterm||'—')}</div></div>
+          <div class="detail-item"><div class="detail-label">Date ouverture</div><div class="detail-value">${fmtDate(dos.created_at)}</div></div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+        <div class="card">
+          <div class="card-header"><span class="card-title">Factures</span></div>
+          <div class="table-wrap"><table><thead><tr><th>N°</th><th>Date</th><th>Statut</th><th>Montant</th></tr></thead><tbody>${facRows}</tbody></table></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Débours</span></div>
+          <div class="table-wrap"><table><thead><tr><th>Date</th><th>Libellé</th><th>Bénéficiaire</th><th>Montant</th></tr></thead><tbody>${debRows}</tbody></table></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Préavis</span></div>
+          <div class="table-wrap"><table><thead><tr><th>Réf.</th><th>Transporteur</th><th>Arrivée</th><th>Statut</th></tr></thead><tbody>${preRows}</tbody></table></div>
+        </div>
+      </div>`;
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+</script>
+
+<script>
+// ── FACTURES ─────────────────────────────────────────────────
+async function pFactures() {
+  document.getElementById('pContent').innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  try {
+    const d = await pApi('GET', '/factures');
+    const rows = d.data.map(f => `
+      <tr>
+        <td class="td-mono fw-600">${esc(f.numero)}</td>
+        <td>${esc(f.dossier_numero||'—')}</td>
+        <td>${fmtDate(f.date_facture)}</td>
+        <td>${badge(f.statut)}</td>
+        <td class="fw-600">${fmtMoney(f.total_ttc)}</td>
+        <td>${fmtMoney(f.total_paye||0)}</td>
+        <td class="${(f.solde_du||0)>0?'text-sm':'text-muted text-sm'}" style="${(f.solde_du||0)>0?'color:var(--danger);font-weight:600':''}">
+          ${fmtMoney(f.solde_du||0)}
+        </td>
+      </tr>`).join('') ||
+      `<tr><td colspan="7"><div class="empty"><div class="empty-icon">🧾</div><p>Aucune facture</p></div></td></tr>`;
+
+    const totalTtc = d.data.reduce((s,f) => s+(f.total_ttc||0), 0);
+    const totalPaye = d.data.reduce((s,f) => s+(f.total_paye||0), 0);
+    const solde = d.data.reduce((s,f) => s+(f.solde_du||0), 0);
+
+    document.getElementById('pContent').innerHTML = `
+      <div class="kpi-row" style="margin-bottom:18px">
+        <div class="kpi-card blue">
+          <div class="kpi-val">${d.total}</div>
+          <div class="kpi-lbl">Total factures</div>
+        </div>
+        <div class="kpi-card green">
+          <div class="kpi-val" style="font-size:16px">${fmtMoney(totalTtc)}</div>
+          <div class="kpi-lbl">Montant total TTC</div>
+        </div>
+        <div class="kpi-card blue">
+          <div class="kpi-val" style="font-size:16px">${fmtMoney(totalPaye)}</div>
+          <div class="kpi-lbl">Montant réglé</div>
+        </div>
+        <div class="kpi-card red">
+          <div class="kpi-val" style="font-size:16px">${fmtMoney(solde)}</div>
+          <div class="kpi-lbl">Solde restant dû</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Mes Factures</span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>N° Facture</th><th>Dossier</th><th>Date</th><th>Statut</th><th>Total TTC</th><th>Réglé</th><th>Solde dû</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  } catch (e) {
+    document.getElementById('pContent').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>${e.message}</p></div>`;
+  }
+}
+
+// ── PRÉAVIS ──────────────────────────────────────────────────
+async function pPreavis() {
+  document.getElementById('pContent').innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  try {
+    const d = await pApi('GET', '/preavis');
+    const transportIcon = m => ({maritime:'🚢',aerien:'✈️',routier:'🚛',ferroviaire:'🚂'}[m]||'📦');
+    const rows = d.data.map(p => `
+      <tr>
+        <td class="td-mono fw-600">${esc(p.reference)}</td>
+        <td>${esc(p.dossier_reference||'—')}</td>
+        <td>${transportIcon(p.moyen_transport)} ${esc(p.moyen_transport||'—')}</td>
+        <td>${esc(p.transporteur||'—')}</td>
+        <td>${esc(p.provenance||'—')}</td>
+        <td class="fw-600">${fmtDate(p.date_arrivee_prevue)}</td>
+        <td>${badge(p.statut)}</td>
+      </tr>`).join('') ||
+      `<tr><td colspan="7"><div class="empty"><div class="empty-icon">🚢</div><p>Aucun préavis</p></div></td></tr>`;
+
+    document.getElementById('pContent').innerHTML = `
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Préavis d'arrivée</span>
+          <span class="text-muted text-sm">${d.total} préavis</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Référence</th><th>Dossier</th><th>Moyen</th><th>Transporteur</th><th>Provenance</th><th>Arrivée prévue</th><th>Statut</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  } catch (e) {
+    document.getElementById('pContent').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>${e.message}</p></div>`;
+  }
+}
+
+// ── INIT ─────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  if (pToken) {
+    try {
+      pClient = await pApi('GET', '/me');
+      showPortal();
+    } catch {
+      pToken = null;
+      localStorage.removeItem('portal_token');
+    }
+  }
+});
+</script>
+</body>
+</html>
