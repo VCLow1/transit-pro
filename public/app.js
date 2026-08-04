@@ -2260,8 +2260,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       currentUser = await api('GET', '/auth/me');
       showApp();
     } catch {
+      // Token invalide ou expiré → nettoyer et afficher le login
       token = null;
+      currentUser = null;
       localStorage.removeItem('transit_token');
+      document.getElementById('loginScreen').classList.remove('hidden');
+      document.getElementById('appShell').classList.add('hidden');
     }
   }
 });
