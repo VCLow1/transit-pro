@@ -1305,7 +1305,6 @@ async function openDebourForm() {
       </div>
     </form>`, 'modal-lg');
 }
-}
 
 async function saveDebours(e) {
   e.preventDefault();
