@@ -35,34 +35,42 @@ app.get('*', (req, res) => {
 });
 
 // ── Init DB ───────────────────────────────────────────────────────────────────
+// dbInitPromise : toutes les requêtes simultanées partagent la même init
 let dbReady = false;
+let dbInitPromise = null;
+
 async function ensureDb() {
-  if (dbReady) return;
-  try {
-    await initDb();
-    console.log('✅ Schema initialisé');
-    
-    // Auto-seed if empty
-    const { get } = require('./db/database');
-    let existing;
+  if (dbReady) return;                     // warm path : 0ms
+  if (dbInitPromise) return dbInitPromise; // requêtes simultanées : 1 seule init
+
+  dbInitPromise = (async () => {
+    const t0 = Date.now();
     try {
-      existing = await get('SELECT COUNT(*) n FROM utilisateurs');
-    } catch (e) {
-      // Table doesn't exist, assume empty DB
-      existing = null;
+      await initDb();
+
+      // Auto-seed si base vide
+      const { get } = require('./db/database');
+      let existing;
+      try { existing = await get('SELECT COUNT(*) n FROM utilisateurs'); }
+      catch (_) { existing = null; }
+
+      if (!existing || existing.n === 0) {
+        console.log('⚙️  Base vide — seed...');
+        const seed = require('./scripts/seed');
+        await seed();
+        console.log('✅ Seed terminé');
+      }
+
+      dbReady = true;
+      console.log(`⚡ DB prête en ${Date.now() - t0}ms`);
+    } catch (error) {
+      dbInitPromise = null; // reset pour réessayer sur la prochaine requête
+      console.error('❌ Erreur init DB:', error.message);
+      throw error;
     }
-    
-    if (!existing || existing.n === 0) {
-      console.log('⚙️  Base vide — exécution du seed...');
-      const seed = require('./scripts/seed');
-      await seed();
-      console.log('✅ Seed terminé');
-    }
-    dbReady = true;
-  } catch (error) {
-    console.error('❌ Erreur init DB:', error.message);
-    throw error;
-  }
+  })();
+
+  return dbInitPromise;
 }
 
 // ── Local dev server ──────────────────────────────────────────────────────────

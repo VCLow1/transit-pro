@@ -60,10 +60,12 @@ async function seed() {
   const R = {}; rubs.forEach(r => { R[r.code] = r; });
 
   // ── Utilisateurs ─────────────────────────────────────────────────────────
-  const hashAdmin = await bcrypt.hash('admin123', 10);
-  const hashSuper = await bcrypt.hash('super123', 10);
-  const hashAgent = await bcrypt.hash('agent123', 10);
-  const hashClient = await bcrypt.hash('client123', 10);
+  // Mots de passe pré-hashés (bcrypt cost=10) pour éviter 4×~400ms au seed
+  // admin123, super123, agent123, client123
+  const hashAdmin  = '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
+  const hashSuper  = '$2a$10$4m.Eu4m4XQdMiJyiK4i1pOT1rGJZmfFiIPW6PvTVGYblBvIRfNuZW';
+  const hashAgent  = '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2uheWG/igi.';
+  const hashClient = '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2uheWG/igi.';
 
   await run(`INSERT INTO utilisateurs (login,mot_de_passe,nom,prenom,email,role) VALUES (?,?,?,?,?,?)
              ON CONFLICT(login) DO UPDATE SET mot_de_passe=excluded.mot_de_passe, role=excluded.role`,

@@ -1207,6 +1207,9 @@ app.get('/api/search', (req, res) => {
   }
 });
 
+// ── AI PDF Extraction ─────────────────────────────────────────────────────────
+app.use('/api/ai', require('./routes/ai-extract'));
+
 // Test CSS endpoint
 app.get('/test-css', (req, res) => {
   const cssPath = path.join(__dirname, 'public', 'style.css');

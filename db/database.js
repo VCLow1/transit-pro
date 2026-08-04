@@ -55,8 +55,32 @@ function rowToObject(columns, row) {
   return obj;
 }
 
+// ── Numéro de version du schéma ─────────────────────────────────────────────
+// Incrementer ce chiffre à chaque changement de schéma pour forcer un reset.
+const SCHEMA_VERSION = 5;
+
 async function initDb() {
+  // ── FAST PATH : vérification de version en 1 seule requête ───────────────
+  // Si la version correspond, on saute TOUTES les migrations.
+  try {
+    const meta = await client.execute(
+      "SELECT val FROM _meta WHERE key='schema_version'"
+    );
+    const rows = meta.rows || [];
+    const val = rows[0] ? (rows[0][0] ?? rows[0].val) : null;
+    if (val !== null && parseInt(val) >= SCHEMA_VERSION) {
+      console.log(`✅ Schema v${val} OK (fast path)`);
+      return; // ← sortie immédiate, 1 seule requête réseau !
+    }
+  } catch(_) {
+    // _meta n'existe pas encore — premier démarrage, on continue
+  }
+
+  // ── SLOW PATH : initialisation complète ──────────────────────────────────
+  console.log('🔄 Initialisation du schéma (slow path)...');
+
   const FULL_SCHEMA = `
+    CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, val TEXT);
     CREATE TABLE IF NOT EXISTS utilisateurs (id INTEGER PRIMARY KEY AUTOINCREMENT, login TEXT NOT NULL UNIQUE, mot_de_passe TEXT NOT NULL, nom TEXT NOT NULL, prenom TEXT, email TEXT, role TEXT NOT NULL DEFAULT 'agent', client_id INTEGER, actif INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT (datetime('now')));
     CREATE TABLE IF NOT EXISTS tva (id INTEGER PRIMARY KEY AUTOINCREMENT, libelle TEXT NOT NULL, taux REAL NOT NULL DEFAULT 0, defaut INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS secteur_activite (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, libelle TEXT NOT NULL);
@@ -79,7 +103,7 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, dossier_id INTEGER, etape_id INTEGER, message TEXT NOT NULL, lu INTEGER NOT NULL DEFAULT 0, date_creation TEXT NOT NULL DEFAULT (datetime('now')));
   `;
 
-  // ── Vérification: le schéma Turso est-il complet? ────────────────────────────
+  // ── Reset si schéma incomplet ─────────────────────────────────────────────
   const CRITICAL_COLS = [
     { table: 'clients',         col: 'actif' },
     { table: 'factures',        col: 'client_id' },
@@ -96,7 +120,7 @@ async function initDb() {
     try {
       const cols = await all(`PRAGMA table_info(${table})`);
       if (cols.length > 0 && !cols.some(c => c.name === col)) {
-        console.log(`⚠️  "${table}" manque la colonne "${col}" → reset`);
+        console.log(`⚠️  "${table}" manque "${col}" → reset`);
         needsReset = true;
         break;
       }
@@ -104,120 +128,65 @@ async function initDb() {
   }
 
   if (needsReset) {
-    console.log('🔄 Reset complet du schéma (schéma Turso incomplet détecté)...');
     const DROP_ORDER = [
-      'notifications', 'etapes_dossier', 'preavis_arrivee', 'debours',
+      '_meta', 'notifications', 'etapes_dossier', 'preavis_arrivee', 'debours',
       'decharges', 'paiements', 'facture_lignes', 'factures',
       'devis_lignes', 'devis', 'dossier_notes', 'dossier_pieces', 'dossiers',
       'clients', 'rubrique', 'secteur_activite', 'type_declaration', 'tva',
       'compteurs', 'utilisateurs',
     ];
     for (const t of DROP_ORDER) {
-      try { await client.execute(`DROP TABLE IF EXISTS ${t}`); console.log(`  ✗ dropped ${t}`); } catch(_) {}
+      try { await client.execute(`DROP TABLE IF EXISTS ${t}`); } catch(_) {}
     }
-    console.log('✅ Tables supprimées. Recréation...');
+    console.log('✅ Tables supprimées, recréation...');
   }
 
-  // ── Création / vérification des tables ───────────────────────────────────────
-  const stmts = FULL_SCHEMA
-    .split(';')
-    .map(s => s.trim())
-    .filter(s => s.length > 0);
-
-  console.log(`Executing ${stmts.length} SQL statements...`);
+  // ── Création des tables ───────────────────────────────────────────────────
+  const stmts = FULL_SCHEMA.split(';').map(s => s.trim()).filter(s => s.length > 0);
   for (const stmt of stmts) {
     try {
       await client.execute(stmt);
       const m = stmt.match(/CREATE TABLE\s+(?:IF NOT EXISTS\s+)?(\w+)/i);
-      if (m) console.log(`✓ Created table: ${m[1]}`);
+      if (m) console.log(`✓ ${m[1]}`);
     } catch (e) {
       console.error(`❌ SQL Error:`, stmt.substring(0, 60), e.message);
       throw e;
     }
   }
 
+  // ── Migration legacy utilisateurs (CHECK constraint) ──────────────────────
   try {
-    const cols = await all("PRAGMA table_info(factures)");
-    const hasClientId = cols.some(c => c.name === 'client_id');
-    if (!hasClientId) {
-      console.log('🔄 Recreating factures table (missing client_id)...');
-      await client.execute('DROP TABLE IF EXISTS facture_lignes');
-      await client.execute('DROP TABLE IF EXISTS paiements');
-      await client.execute('DROP TABLE IF EXISTS decharges');
-      await client.execute('DROP TABLE IF EXISTS factures');
-      await client.execute(`CREATE TABLE factures (id INTEGER PRIMARY KEY AUTOINCREMENT, numero TEXT NOT NULL UNIQUE, dossier_id INTEGER REFERENCES dossiers(id), client_id INTEGER NOT NULL REFERENCES clients(id), devis_id INTEGER REFERENCES devis(id), date_facture TEXT NOT NULL DEFAULT (date('now')), date_echeance TEXT, statut TEXT NOT NULL DEFAULT 'brouillon', objet TEXT, conditions TEXT, notes TEXT, remise_globale REAL NOT NULL DEFAULT 0, created_by INTEGER REFERENCES utilisateurs(id), created_at TEXT NOT NULL DEFAULT (datetime('now')))`);
-      await client.execute(`CREATE TABLE IF NOT EXISTS facture_lignes (id INTEGER PRIMARY KEY AUTOINCREMENT, facture_id INTEGER NOT NULL REFERENCES factures(id) ON DELETE CASCADE, rubrique_id INTEGER REFERENCES rubrique(id), designation TEXT NOT NULL, quantite REAL NOT NULL DEFAULT 1, prix_unitaire REAL NOT NULL DEFAULT 0, tva_id INTEGER REFERENCES tva(id), ordre INTEGER NOT NULL DEFAULT 0)`);
-      await client.execute(`CREATE TABLE IF NOT EXISTS paiements (id INTEGER PRIMARY KEY AUTOINCREMENT, facture_id INTEGER NOT NULL REFERENCES factures(id) ON DELETE CASCADE, date_paiement TEXT NOT NULL DEFAULT (date('now')), montant REAL NOT NULL, mode TEXT NOT NULL DEFAULT 'virement', reference TEXT, notes TEXT, created_by INTEGER REFERENCES utilisateurs(id), created_at TEXT NOT NULL DEFAULT (datetime('now')))`);
-      await client.execute(`CREATE TABLE IF NOT EXISTS decharges (id INTEGER PRIMARY KEY AUTOINCREMENT, facture_id INTEGER NOT NULL REFERENCES factures(id) ON DELETE CASCADE, date_decharge TEXT NOT NULL DEFAULT (date('now')), signataire TEXT, observations TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))`);
-      console.log('✅ factures table recreated with correct schema.');
-    }
-  } catch(e) { console.error('Migration factures error:', e.message); }
-
-  // Vérifier devis.client_id
-  try {
-    const cols = await all("PRAGMA table_info(devis)");
-    const hasClientId = cols.some(c => c.name === 'client_id');
-    if (!hasClientId) {
-      console.log('🔄 Recreating devis table (missing client_id)...');
-      await client.execute('DROP TABLE IF EXISTS devis_lignes');
-      await client.execute('DROP TABLE IF EXISTS devis');
-      await client.execute(`CREATE TABLE devis (id INTEGER PRIMARY KEY AUTOINCREMENT, numero TEXT NOT NULL UNIQUE, dossier_id INTEGER REFERENCES dossiers(id), client_id INTEGER NOT NULL REFERENCES clients(id), date_devis TEXT NOT NULL DEFAULT (date('now')), date_validite TEXT, statut TEXT NOT NULL DEFAULT 'brouillon', objet TEXT, conditions TEXT, notes TEXT, remise_globale REAL NOT NULL DEFAULT 0, created_by INTEGER REFERENCES utilisateurs(id), created_at TEXT NOT NULL DEFAULT (datetime('now')))`);
-      await client.execute(`CREATE TABLE IF NOT EXISTS devis_lignes (id INTEGER PRIMARY KEY AUTOINCREMENT, devis_id INTEGER NOT NULL REFERENCES devis(id) ON DELETE CASCADE, rubrique_id INTEGER REFERENCES rubrique(id), designation TEXT NOT NULL, quantite REAL NOT NULL DEFAULT 1, prix_unitaire REAL NOT NULL DEFAULT 0, tva_id INTEGER REFERENCES tva(id), ordre INTEGER NOT NULL DEFAULT 0)`);
-      console.log('✅ devis table recreated with correct schema.');
-    }
-  } catch(e) { console.error('Migration devis error:', e.message); }
-
-  // Vérifier etapes_dossier.pieces_jointes
-  try {
-    const cols = await all("PRAGMA table_info(etapes_dossier)");
-    const hasPiecesJointes = cols.some(c => c.name === 'pieces_jointes');
-    if (!hasPiecesJointes) {
-      console.log('🔄 Recreating etapes_dossier table (missing pieces_jointes)...');
-      await client.execute('DROP TABLE IF EXISTS etapes_dossier');
-      await client.execute(`CREATE TABLE etapes_dossier (id INTEGER PRIMARY KEY AUTOINCREMENT, dossier_id INTEGER NOT NULL REFERENCES dossiers(id) ON DELETE CASCADE, agent_id INTEGER NOT NULL REFERENCES utilisateurs(id), titre_etape TEXT NOT NULL, description TEXT, pieces_jointes TEXT DEFAULT '[]', statut TEXT NOT NULL DEFAULT 'en_attente', motif_rejet TEXT, valide_par INTEGER REFERENCES utilisateurs(id), date_declaration TEXT NOT NULL DEFAULT (datetime('now')), date_validation TEXT)`);
-      console.log('✅ etapes_dossier table recreated with correct schema.');
-    }
-  } catch(e) { console.error('Migration etapes_dossier error:', e.message); }
-
-  // Vérifier notifications.dossier_id  
-  try {
-    const cols = await all("PRAGMA table_info(notifications)");
-    const hasDossierId = cols.some(c => c.name === 'dossier_id');
-    if (!hasDossierId) {
-      console.log('🔄 Recreating notifications table (missing dossier_id)...');
-      await client.execute('DROP TABLE IF EXISTS notifications');
-      await client.execute(`CREATE TABLE notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES utilisateurs(id) ON DELETE CASCADE, dossier_id INTEGER REFERENCES dossiers(id) ON DELETE CASCADE, etape_id INTEGER REFERENCES etapes_dossier(id) ON DELETE CASCADE, message TEXT NOT NULL, lu INTEGER NOT NULL DEFAULT 0, date_creation TEXT NOT NULL DEFAULT (datetime('now')))`);
-      console.log('✅ notifications table recreated with correct schema.');
-    }
-  } catch(e) { console.error('Migration notifications error:', e.message); }
-
-
-  // ── Migration légère : utilisateurs (CHECK constraint legacy) ─────────────────
-  try {
-    const tableInfo = await all("PRAGMA table_info(utilisateurs)");
-    if (!tableInfo.some(c => c.name === 'client_id')) {
+    const ti = await all("PRAGMA table_info(utilisateurs)");
+    if (!ti.some(c => c.name === 'client_id')) {
       await run("ALTER TABLE utilisateurs ADD COLUMN client_id INTEGER");
     }
-  } catch(e) {}
+  } catch(_) {}
 
   try {
-    await run("INSERT INTO utilisateurs (login, mot_de_passe, nom, role) VALUES ('__test_role_check__', 'x', 'x', 'superviseur')");
-    await run("DELETE FROM utilisateurs WHERE login='__test_role_check__'");
+    await run("INSERT INTO utilisateurs (login, mot_de_passe, nom, role) VALUES ('__chk__','x','x','superviseur')");
+    await run("DELETE FROM utilisateurs WHERE login='__chk__'");
   } catch(e) {
     if (e.message && e.message.includes('CHECK constraint failed')) {
-      console.log('🔄 Mise à jour du schéma utilisateurs (contrainte CHECK obsolète)...');
       await run("PRAGMA foreign_keys = OFF");
       await run("CREATE TABLE _u_bak AS SELECT id, login, mot_de_passe, nom, prenom, email, role, client_id, actif, created_at FROM utilisateurs");
       await run("DROP TABLE utilisateurs");
       await run("CREATE TABLE utilisateurs (id INTEGER PRIMARY KEY AUTOINCREMENT, login TEXT NOT NULL UNIQUE, mot_de_passe TEXT NOT NULL, nom TEXT NOT NULL, prenom TEXT, email TEXT, role TEXT NOT NULL DEFAULT 'agent', client_id INTEGER, actif INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT (datetime('now')))");
-      await run("INSERT INTO utilisateurs SELECT id, login, mot_de_passe, nom, prenom, email, role, client_id, actif, created_at FROM _u_bak");
+      await run("INSERT INTO utilisateurs SELECT * FROM _u_bak");
       await run("DROP TABLE _u_bak");
       await run("PRAGMA foreign_keys = ON");
-      console.log('✅ Table utilisateurs migrée.');
     }
   }
 
-  console.log('✅ Schema initialisé');
+  // ── Enregistrement de la version du schéma ────────────────────────────────
+  // Fait AVANT le seed, pour que le seed ne re-déclenche pas l'init
+  try {
+    await client.execute({
+      sql: "INSERT OR REPLACE INTO _meta (key, val) VALUES ('schema_version', ?)",
+      args: [String(SCHEMA_VERSION)]
+    });
+  } catch(_) {}
+
+  console.log(`✅ Schema v${SCHEMA_VERSION} initialisé`);
 }
 
 // Generate next document number

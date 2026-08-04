@@ -567,6 +567,7 @@ async function openClientForm(id = null) {
   if (id) { try { c = await api('GET', `/clients/${id}`); } catch {} }
   const sOpts = secteurs.map(s => `<option value="${s.id}" ${c.secteur_id==s.id?'selected':''}>${esc(s.libelle)}</option>`).join('');
   openModal(id ? 'Modifier le client' : 'Nouveau client', `
+    ${!id ? pdfUploadWidget('client', 'pdfClientWidget') : ''}
     <form id="clientForm" class="form-grid" onsubmit="saveClient(event,${id||'null'})">
       <div class="field-group"><label>Code *</label><input name="code" value="${esc(c.code||'')}" required/></div>
       <div class="field-group"><label>Raison sociale *</label><input name="raison_sociale" value="${esc(c.raison_sociale||'')}" required/></div>
@@ -581,7 +582,7 @@ async function openClientForm(id = null) {
         <button type="button" class="btn btn-secondary" onclick="closeModal()">Annuler</button>
         <button type="submit" class="btn btn-primary">${id ? 'Enregistrer' : 'Créer'}</button>
       </div>
-    </form>`);
+    </form>`, 'modal-lg');
 }
 
 async function saveClient(e, id) {
@@ -735,6 +736,7 @@ async function openDossierForm(id = null) {
   const cOpts = cliData.data.map(c => `<option value="${c.id}" ${d.client_id==c.id?'selected':''}>${esc(c.raison_sociale)}</option>`).join('');
   const tOpts = typesData.map(t => `<option value="${t.id}" ${d.type_decl_id==t.id?'selected':''}>${esc(t.libelle)}</option>`).join('');
   openModal(id ? 'Modifier le dossier' : 'Nouveau dossier', `
+    ${!id ? pdfUploadWidget('dossier', 'pdfDossierWidget') : ''}
     <form id="dossierForm" class="form-grid" onsubmit="saveDossier(event,${id||'null'})">
       <div class="field-group"><label>Client *</label><select name="client_id" required><option value="">— Choisir —</option>${cOpts}</select></div>
       <div class="field-group"><label>Type *</label><select name="type_decl_id" required><option value="">— Choisir —</option>${tOpts}</select></div>
@@ -749,7 +751,7 @@ async function openDossierForm(id = null) {
         <button type="button" class="btn btn-secondary" onclick="closeModal()">Annuler</button>
         <button type="submit" class="btn btn-primary">${id ? 'Enregistrer' : 'Créer'}</button>
       </div>
-    </form>`);
+    </form>`, 'modal-lg');
 }
 
 async function saveDossier(e, id) {
@@ -1286,6 +1288,7 @@ async function openDebourForm() {
   const libelles = ['Droits et taxes douane','Transport routier','Magasinage','Pesage','Frais escorte','Assurance','Timbrage','Frais de port','Frais divers'];
   const libOpts = libelles.map(l => `<option value="${l}">${l}</option>`).join('');
   openModal('Nouveau débours', `
+    ${pdfUploadWidget('debours', 'pdfDebourWidget')}
     <form class="form-grid" onsubmit="saveDebours(event)">
       <div class="field-group"><label>Dossier *</label><select name="dossier_id" required><option value="">— Choisir —</option>${dosOpts}</select></div>
       <div class="field-group"><label>Date *</label><input type="date" name="date_debours" value="${new Date().toISOString().slice(0,10)}" required/></div>
@@ -1300,7 +1303,8 @@ async function openDebourForm() {
         <button type="button" class="btn btn-secondary" onclick="closeModal()">Annuler</button>
         <button type="submit" class="btn btn-primary">Enregistrer</button>
       </div>
-    </form>`);
+    </form>`, 'modal-lg');
+}
 }
 
 async function saveDebours(e) {
@@ -1996,6 +2000,207 @@ async function saveUser(e, id) {
   }
 }
 
+
+// ════════════════════════════════════════════════════════════════
+//  PDF AI EXTRACTION — Widget et logique de remplissage auto
+// ════════════════════════════════════════════════════════════════
+
+/**
+ * Génère le HTML du widget d'upload PDF.
+ * @param {string} type   - 'client' | 'dossier' | 'debours'
+ * @param {string} widgetId - ID du conteneur pour les callbacks
+ */
+function pdfUploadWidget(type, widgetId) {
+  const labels = { client: 'client / contrat', dossier: 'BL / connaissement / facture commerciale', debours: 'facture / reçu / bon de caisse' };
+  return `
+  <div id="${widgetId}" style="
+    border:2px dashed var(--accent);border-radius:10px;padding:14px 16px;
+    margin-bottom:18px;background:var(--accent-light);
+  ">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span style="font-size:20px">🤖</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:var(--accent)">Extraction automatique par IA</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">
+          Importez un PDF (${labels[type]}) — les champs seront remplis automatiquement
+        </div>
+      </div>
+      <label style="cursor:pointer">
+        <input type="file" accept=".pdf" style="display:none"
+          onchange="handlePdfUpload(event,'${type}','${widgetId}')"/>
+        <span class="btn btn-primary btn-sm">
+          <svg viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
+          Importer PDF
+        </span>
+      </label>
+    </div>
+    <div id="${widgetId}_status" style="margin-top:8px;display:none"></div>
+  </div>`;
+}
+
+/**
+ * Gère l'upload du PDF, appelle l'API d'extraction, remplit le formulaire.
+ */
+async function handlePdfUpload(event, type, widgetId) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const statusEl = document.getElementById(widgetId + '_status');
+  statusEl.style.display = 'block';
+  statusEl.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--accent)">
+      <div class="spinner" style="width:14px;height:14px;border-width:2px"></div>
+      <span>Analyse du PDF en cours…</span>
+    </div>`;
+
+  try {
+    const formData = new FormData();
+    formData.append('pdf', file);
+    formData.append('type', type);
+
+    const res = await fetch('/api/ai/extract-pdf', {
+      method: 'POST',
+      headers: token ? { 'Authorization': 'Bearer ' + token } : {},
+      body: formData
+    });
+
+    const result = await res.json();
+
+    if (!res.ok || result.error) {
+      throw new Error(result.error || 'Erreur serveur');
+    }
+
+    const data = result.data;
+    const fieldsCount = Object.keys(data).length;
+
+    // Remplir les champs du formulaire
+    fillFormFromPdf(type, data);
+
+    const methodLabel = result.method === 'ai'
+      ? '✅ IA (GPT-4o)'
+      : '⚠️ Extraction basique (sans clé OpenAI)';
+
+    statusEl.innerHTML = `
+      <div style="background:#d1fae5;border-radius:6px;padding:8px 12px;font-size:12px;color:#065f46">
+        ${methodLabel} — <strong>${fieldsCount} champ(s) rempli(s)</strong> depuis <em>${file.name}</em>
+        <span style="float:right;cursor:pointer;color:#065f46" onclick="this.parentElement.parentElement.style.display='none'">✕</span>
+      </div>`;
+
+    toast(`${fieldsCount} champs extraits du PDF`, 'success');
+
+  } catch (err) {
+    statusEl.innerHTML = `
+      <div style="background:#fee2e2;border-radius:6px;padding:8px 12px;font-size:12px;color:#991b1b">
+        ❌ ${err.message}
+        <span style="float:right;cursor:pointer" onclick="this.parentElement.parentElement.style.display='none'">✕</span>
+      </div>`;
+    toast(err.message, 'error');
+  }
+
+  // Reset file input
+  event.target.value = '';
+}
+
+/**
+ * Remplit les champs du formulaire modal selon le type et les données extraites.
+ */
+function fillFormFromPdf(type, data) {
+  const modal = document.getElementById('modalBody');
+  if (!modal) return;
+
+  function setField(name, value) {
+    if (!value) return;
+    const el = modal.querySelector(`[name="${name}"]`);
+    if (!el) return;
+    el.value = value;
+    // Animation visuelle pour signaler le champ rempli
+    el.style.transition = 'background .3s';
+    el.style.background = 'rgba(108,71,255,0.08)';
+    setTimeout(() => { el.style.background = ''; }, 2000);
+  }
+
+  function matchSelect(name, value) {
+    if (!value) return;
+    const el = modal.querySelector(`select[name="${name}"]`);
+    if (!el) return;
+    const val = value.toString().toLowerCase();
+    // Cherche une option qui contient le texte
+    for (const opt of el.options) {
+      if (opt.text.toLowerCase().includes(val) || opt.value.toLowerCase().includes(val)) {
+        el.value = opt.value;
+        el.style.background = 'rgba(108,71,255,0.08)';
+        setTimeout(() => { el.style.background = ''; }, 2000);
+        break;
+      }
+    }
+  }
+
+  if (type === 'client') {
+    setField('code', data.code);
+    setField('raison_sociale', data.raison_sociale);
+    setField('adresse', data.adresse);
+    setField('ville', data.ville);
+    setField('code_postal', data.code_postal);
+    setField('telephone', data.telephone);
+    setField('email', data.email);
+    setField('contact', data.contact);
+    setField('nif', data.nif || data.matricule_fiscal);
+    setField('notes', data.notes);
+    if (data.secteur_lib) matchSelect('secteur_id', data.secteur_lib);
+  }
+
+  if (type === 'dossier') {
+    setField('marchandise', data.marchandise);
+    setField('pays_origine', data.pays_origine);
+    setField('pays_destination', data.pays_destination);
+    setField('incoterm', data.incoterm);
+    setField('description', data.description || data.observations);
+    setField('observations', data.observations);
+    if (data.valeur_marchandise) {
+      setField('valeur_douane', parseFloat(data.valeur_marchandise.toString().replace(/[^0-9.]/g,'')) || 0);
+    }
+    // Sélectionner le type de déclaration
+    if (data.type_declaration) matchSelect('type_decl_id', data.type_declaration);
+    // Chercher le client par nom
+    if (data.client_nom) {
+      const selClient = modal.querySelector('select[name="client_id"]');
+      if (selClient) {
+        const nom = data.client_nom.toLowerCase();
+        for (const opt of selClient.options) {
+          if (opt.text.toLowerCase().includes(nom.slice(0,8))) {
+            selClient.value = opt.value;
+            selClient.style.background = 'rgba(108,71,255,0.08)';
+            setTimeout(() => { selClient.style.background = ''; }, 2000);
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  if (type === 'debours') {
+    setField('libelle', data.libelle);
+    setField('beneficiaire', data.beneficiaire);
+    setField('montant', data.montant);
+    setField('date_debours', data.date_debours);
+    setField('notes', data.observations);
+    // Chercher le dossier par référence
+    if (data.ref_dossier) {
+      const selDos = modal.querySelector('select[name="dossier_id"]');
+      if (selDos) {
+        const ref = data.ref_dossier.toLowerCase();
+        for (const opt of selDos.options) {
+          if (opt.text.toLowerCase().includes(ref)) {
+            selDos.value = opt.value;
+            break;
+          }
+        }
+      }
+    }
+  }
+}
+
+//  ── FIN PDF AI ────────────────────────────────────────────────
 
 // ════════════════════════════════════════════════════════════════
 //  BOOTSTRAP — DOMContentLoaded
