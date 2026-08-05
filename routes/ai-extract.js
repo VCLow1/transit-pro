@@ -1,218 +1,282 @@
 /**
- * AI PDF Extraction Route
- * POST /api/ai/extract-pdf
- * 
- * Reçoit un PDF, extrait le texte avec pdf-parse,
- * envoie à OpenAI GPT-4o pour en extraire les données structurées
- * selon le type de document (client, dossier, debours).
+ * AI PDF Extraction Route — Compatible Vercel Serverless
+ * POST /api/ai/extract-pdf  (multipart/form-data)
  */
 
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
 const OpenAI = require('openai');
 
-// Extraction de texte PDF — approche robuste compatible avec toutes les versions
+// ── Extraction de texte PDF ───────────────────────────────────────────────────
+
 async function extractTextFromPdf(buffer) {
-  // Méthode 1 : pdf-parse avec PDFParse.getText
+  // Méthode 1 : pdf-parse PDFParse.getText
   try {
     const pdfMod = require('pdf-parse');
     if (pdfMod && pdfMod.PDFParse) {
       const parser = new pdfMod.PDFParse({ verbosity: 0, data: buffer });
       const result = await parser.getText({});
-      if (result && result.text && result.text.trim().length > 5) {
-        return result.text;
+      if (result && result.text && result.text.trim().length > 10) {
+        return result.text.slice(0, 6000);
       }
     }
   } catch (e) {
-    console.log('pdf-parse PDFParse.getText failed:', e.message);
+    console.log('pdf-parse failed, using fallback:', e.message);
   }
 
-  // Méthode 2 : extraction brute du texte visible dans le PDF (BT/ET blocks)
+  // Méthode 2 : extraction brute des blocs texte PDF (BT/ET)
   const raw = buffer.toString('latin1');
   const strings = [];
 
-  const btBlocks = raw.match(/BT[\s\S]*?ET/g) || [];
+  const btBlocks = raw.match(/BT[\s\S]{0,2000}?ET/g) || [];
   for (const block of btBlocks) {
-    const matches = block.match(/\(([^)\\]*(?:\\.[^)\\]*)*)\)\s*Tj/g) || [];
+    const matches = block.match(/\(([^)\\]{1,100}(?:\\.[^)\\]{0,100})*)\)\s*Tj/g) || [];
     for (const m of matches) {
       const str = m.replace(/^\(/, '').replace(/\)\s*Tj$/, '')
-        .replace(/\\n/g, '\n').replace(/\\\(/g, '(').replace(/\\\)/g, ')');
-      if (str.trim().length > 0) strings.push(str);
+        .replace(/\\n/g, '\n').replace(/\\\(/g, '(').replace(/\\\)/g, ')').trim();
+      if (str.length > 1) strings.push(str);
     }
   }
 
-  if (strings.length === 0) {
-    const allStrings = raw.match(/\(([^\x00-\x1f\x7f-\x9f()\\]{2,60})\)/g) || [];
-    for (const s of allStrings) {
+  if (strings.length < 5) {
+    const allStr = raw.match(/\(([^\x00-\x1f\x7f-\x9f()\\]{3,80})\)/g) || [];
+    for (const s of allStr) {
       const clean = s.slice(1, -1).trim();
-      if (clean.length > 3 && /[a-zA-Z]/.test(clean)) strings.push(clean);
+      if (clean.length > 3 && /[a-zA-ZÀ-ÿ0-9]/.test(clean)) strings.push(clean);
     }
   }
 
-  return strings.join('\n').replace(/\s{3,}/g, '\n').trim();
+  return strings.join('\n').replace(/\s{3,}/g, '\n').trim().slice(0, 6000);
 }
 
-// Multer en mémoire (pas de fichier sur disque)
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB max
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype === 'application/pdf') cb(null, true);
-    else cb(new Error('Seuls les fichiers PDF sont acceptés'));
-  }
-});
+// ── Parser multipart sans multer (compatible Vercel) ─────────────────────────
 
-// ── Prompts par type de document ─────────────────────────────────────────────
+function parseMultipartBuffer(req) {
+  return new Promise((resolve, reject) => {
+    // Si le body est déjà un Buffer (Vercel le pré-parse parfois)
+    if (req.body && Buffer.isBuffer(req.body) && req.body.length > 0) {
+      return resolve({ fileBuffer: req.body, type: req.headers['x-doc-type'] || 'dossier' });
+    }
+
+    const chunks = [];
+    req.on('data', chunk => chunks.push(chunk));
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks);
+      const contentType = req.headers['content-type'] || '';
+      const boundaryMatch = contentType.match(/boundary=([^\s;]+)/);
+
+      if (!boundaryMatch) {
+        return reject(new Error('No multipart boundary found'));
+      }
+
+      const boundary = '--' + boundaryMatch[1];
+      const boundaryBuf = Buffer.from(boundary);
+      const parts = splitBuffer(raw, boundaryBuf);
+
+      let fileBuffer = null;
+      let docType = 'dossier';
+
+      for (const part of parts) {
+        if (part.length < 10) continue;
+        const headerEnd = indexOfSequence(part, Buffer.from('\r\n\r\n'));
+        if (headerEnd === -1) continue;
+
+        const headerStr = part.slice(0, headerEnd).toString('utf8');
+        const body = part.slice(headerEnd + 4);
+        // Remove trailing \r\n
+        const bodyClean = body.slice(0, body.length - (body.slice(-2).toString() === '\r\n' ? 2 : 0));
+
+        if (headerStr.includes('name="type"')) {
+          docType = bodyClean.toString('utf8').trim();
+        } else if (headerStr.includes('name="pdf"') || headerStr.includes('filename=')) {
+          fileBuffer = bodyClean;
+        }
+      }
+
+      if (!fileBuffer) return reject(new Error('Aucun fichier PDF trouvé dans la requête'));
+      resolve({ fileBuffer, type: docType });
+    });
+    req.on('error', reject);
+  });
+}
+
+function splitBuffer(buf, delimiter) {
+  const parts = [];
+  let start = 0;
+  let pos = 0;
+  while (pos <= buf.length - delimiter.length) {
+    if (buf.slice(pos, pos + delimiter.length).equals(delimiter)) {
+      parts.push(buf.slice(start, pos));
+      start = pos + delimiter.length;
+      pos = start;
+    } else {
+      pos++;
+    }
+  }
+  parts.push(buf.slice(start));
+  return parts.filter(p => p.length > 2);
+}
+
+function indexOfSequence(buf, seq) {
+  for (let i = 0; i <= buf.length - seq.length; i++) {
+    if (buf.slice(i, i + seq.length).equals(seq)) return i;
+  }
+  return -1;
+}
+
+// ── Prompts IA ────────────────────────────────────────────────────────────────
 
 const PROMPTS = {
-  client: `Tu es un assistant de gestion de transit. Analyse ce document et extrais les informations du CLIENT.
-Retourne UNIQUEMENT un JSON valide avec ces champs (null si non trouvé) :
+  client: `Analyse ce document et extrais les informations du CLIENT. Retourne UNIQUEMENT un JSON valide :
 {
-  "code":             "code client (ex: CLI001)",
-  "raison_sociale":   "nom de l'entreprise ou du client",
-  "adresse":          "adresse complète",
-  "ville":            "ville",
-  "code_postal":      "code postal",
-  "pays":             "pays",
-  "telephone":        "numéro de téléphone",
-  "email":            "adresse email",
-  "contact":          "nom du contact",
-  "nif":              "numéro d'identification fiscale",
+  "code": "code client",
+  "raison_sociale": "nom entreprise",
+  "adresse": "adresse",
+  "ville": "ville",
+  "code_postal": "code postal",
+  "pays": "pays",
+  "telephone": "téléphone",
+  "email": "email",
+  "contact": "nom contact",
+  "nif": "numéro fiscal",
   "matricule_fiscal": "matricule fiscal",
-  "secteur_lib":      "secteur d'activité",
-  "notes":            "informations supplémentaires utiles"
-}
-Ne retourne rien d'autre que le JSON.`,
+  "secteur_lib": "secteur activité",
+  "notes": "infos supplémentaires"
+}`,
 
-  dossier: `Tu es un assistant de gestion de transit douanière. Analyse ce document (connaissement, BL, facture commerciale, déclaration douanière, etc.) et extrais les informations du DOSSIER.
-Retourne UNIQUEMENT un JSON valide avec ces champs (null si non trouvé) :
+  dossier: `Analyse ce document de transit (BL, connaissement, facture commerciale, DAU). Retourne UNIQUEMENT un JSON valide :
 {
-  "description":       "description générale du dossier",
-  "marchandise":       "désignation/nature de la marchandise",
-  "pays_origine":      "pays d'origine de la marchandise",
-  "pays_destination":  "pays de destination",
-  "incoterm":          "incoterm (EXW, FOB, CIF, etc.)",
-  "navire":            "nom du navire ou numéro de vol",
-  "transporteur":      "nom du transporteur/compagnie",
-  "type_transport":    "maritime | aerien | routier | ferroviaire",
-  "type_declaration":  "IMP (importation) | EXP (exportation) | TRA (transit)",
-  "client_nom":        "nom du client/importateur/exportateur",
-  "client_code":       "code client si visible",
-  "valeur_marchandise":"valeur en chiffres (sans devise)",
-  "devise":            "devise (TND, EUR, USD, etc.)",
-  "observations":      "remarques importantes, numéros de référence, etc."
-}
-Ne retourne rien d'autre que le JSON.`,
+  "description": "description générale",
+  "marchandise": "nature/désignation marchandise",
+  "pays_origine": "pays d'origine",
+  "pays_destination": "pays destination",
+  "incoterm": "incoterm (FOB, CIF, etc.)",
+  "navire": "nom navire ou vol",
+  "transporteur": "compagnie transport",
+  "type_transport": "maritime|aerien|routier|ferroviaire",
+  "type_declaration": "IMP|EXP|TRA",
+  "client_nom": "nom importateur/exportateur",
+  "valeur_marchandise": "valeur numérique",
+  "devise": "TND|EUR|USD",
+  "observations": "remarques et références"
+}`,
 
-  debours: `Tu es un assistant comptable transit. Analyse ce document (facture, reçu, bon de caisse, etc.) et extrais les informations des DÉBOURS.
-Retourne UNIQUEMENT un JSON valide avec ces champs (null si non trouvé) :
+  debours: `Analyse cette facture/reçu. Retourne UNIQUEMENT un JSON valide :
 {
-  "libelle":       "intitulé/description du débours",
-  "montant":       "montant en chiffres uniquement (ex: 350.000)",
-  "devise":        "devise (TND, EUR, USD, etc.)",
-  "beneficiaire":  "nom du bénéficiaire/prestataire",
-  "date_debours":  "date au format YYYY-MM-DD",
-  "ref_dossier":   "référence du dossier associé si visible",
-  "justificatif":  "numéro de facture/reçu",
-  "observations":  "informations supplémentaires"
-}
-Ne retourne rien d'autre que le JSON.`
+  "libelle": "intitulé du débours",
+  "montant": "montant numérique",
+  "devise": "TND|EUR|USD",
+  "beneficiaire": "nom bénéficiaire",
+  "date_debours": "date YYYY-MM-DD",
+  "ref_dossier": "référence dossier si visible",
+  "justificatif": "numéro facture/reçu",
+  "observations": "infos supplémentaires"
+}`
 };
 
-// ── Fallback si pas d'API key OpenAI ────────────────────────────────────────
+// ── Fallback regex (sans OpenAI) ──────────────────────────────────────────────
 
 function extractWithRegex(text, type) {
-  const clean = t => (t || '').replace(/\s+/g, ' ').trim();
-
-  // Patterns génériques pour extraire des données
-  const patterns = {
-    email:    text.match(/[\w.-]+@[\w.-]+\.\w{2,}/)?.[0] || null,
-    tel:      text.match(/(?:\+216|00216)?[\s.-]?\d{2}[\s.-]?\d{3}[\s.-]?\d{3}/)?.[0]?.replace(/\s/g,'') || null,
-    montant:  text.match(/(\d{1,3}(?:[,.\s]\d{3})*(?:[.,]\d{1,3})?)\s*(?:TND|DT|EUR|USD)/i)?.[1]?.replace(/[,\s]/g,'') || null,
-    date:     text.match(/(\d{4}[-\/]\d{2}[-\/]\d{2})/)?.[1] || null,
-    nif:      text.match(/NIF\s*[:=]?\s*([\w\/]+)/i)?.[1] || null,
-  };
+  const email = text.match(/[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}/)?.[0] || null;
+  const tel = text.match(/(?:\+?[\d\s.-]{8,15})/)?.[0]?.replace(/\s/g, '') || null;
+  const montant = text.match(/(\d[\d\s,.]*)\s*(?:TND|DT|EUR|USD)/i)?.[1]?.replace(/[\s,]/g, '') || null;
+  const date = text.match(/(\d{4}[-/]\d{2}[-/]\d{2})/)?.[1] || null;
+  const nif = text.match(/(?:NIF|N\.I\.F)\s*[:\-=]?\s*([\w/]+)/i)?.[1] || null;
 
   if (type === 'client') {
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 4);
     return {
-      raison_sociale: text.split('\n').find(l => l.trim().length > 5 && /[A-Z]{2}/.test(l))?.trim() || null,
-      telephone: patterns.tel,
-      email: patterns.email,
-      nif: patterns.nif,
-      ville: text.match(/(?:Ville|City|Tunis|Sfax|Sousse|Bizerte|Nabeul|Monastir)\s*[:=]?\s*([\w\s]+)/i)?.[1]?.trim() || null,
-      adresse: null, contact: null, code: null, code_postal: null, pays: 'Tunisie', notes: null
+      raison_sociale: lines.find(l => /[A-Z]{3,}/.test(l) && l.length < 60) || null,
+      telephone: tel,
+      email,
+      nif,
+      ville: text.match(/(?:Ville|City)\s*[:\-]?\s*([\w\s]+)/i)?.[1]?.trim() || null,
+      adresse: null,
+      code: null,
+      pays: 'Tunisie',
+      notes: null
     };
   }
 
   if (type === 'dossier') {
-    const typeDecl = /export/i.test(text) ? 'EXP' : /transit/i.test(text) ? 'TRA' : 'IMP';
-    const transport = /a[eé]rien|flight|cargo/i.test(text) ? 'aerien' :
-                      /routier|truck|camion/i.test(text) ? 'routier' : 'maritime';
     return {
-      description: text.split('\n').find(l => l.trim().length > 10)?.trim()?.slice(0,100) || null,
-      marchandise: text.match(/(?:marchandise|goods|nature)[^:\n]*[:]\s*([^\n]+)/i)?.[1]?.trim() || null,
-      pays_origine: text.match(/(?:origine|origin|provenance)[^:\n]*[:]\s*([^\n]+)/i)?.[1]?.trim() || null,
-      pays_destination: text.match(/(?:destination|destinataire)[^:\n]*[:]\s*([^\n]+)/i)?.[1]?.trim() || null,
-      incoterm: text.match(/\b(EXW|FOB|CIF|CFR|DAP|DDP|FCA|CPT|CIP)\b/i)?.[1] || null,
-      navire: text.match(/(?:navire|vessel|ship|vol|flight)[^:\n]*[:]\s*([\w\s-]+)/i)?.[1]?.trim() || null,
-      transporteur: text.match(/(?:transporteur|carrier|compagnie)[^:\n]*[:]\s*([^\n]+)/i)?.[1]?.trim() || null,
-      type_transport: transport,
-      type_declaration: typeDecl,
-      valeur_marchandise: patterns.montant,
-      devise: text.match(/\b(TND|DT|EUR|USD|GBP)\b/)?.[1] || 'TND',
-      client_nom: null, client_code: null, observations: null
-    };
-  }
-
-  if (type === 'debours') {
-    return {
-      libelle: text.split('\n').find(l => l.trim().length > 5)?.trim()?.slice(0,80) || null,
-      montant: patterns.montant,
+      marchandise: text.match(/(?:marchandise|goods|nature|désignation)\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim() || null,
+      pays_origine: text.match(/(?:origine|origin|provenance)\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim() || null,
+      pays_destination: text.match(/(?:destination|destinataire)\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim() || null,
+      incoterm: text.match(/\b(EXW|FOB|CIF|CFR|DAP|DDP|FCA|CPT|CIP|DAT)\b/i)?.[1] || null,
+      navire: text.match(/(?:navire|vessel|ship|vol|flight)\s*[:\-]\s*([\w\s-]+)/i)?.[1]?.trim() || null,
+      transporteur: text.match(/(?:transporteur|carrier|compagnie)\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim() || null,
+      type_transport: /a[eé]rien|flight|cargo/i.test(text) ? 'aerien' :
+                      /routier|truck|camion/i.test(text) ? 'routier' : 'maritime',
+      type_declaration: /export/i.test(text) ? 'EXP' : /transit/i.test(text) ? 'TRA' : 'IMP',
+      valeur_marchandise: montant,
       devise: text.match(/\b(TND|DT|EUR|USD)\b/)?.[1] || 'TND',
-      beneficiaire: text.split('\n')[0]?.trim()?.slice(0,50) || null,
-      date_debours: patterns.date,
-      ref_dossier: text.match(/\b(\d{4}[IET]\d{5})\b/)?.[1] || null,
-      justificatif: text.match(/(?:facture|reçu|invoice|N°)[^:\n]*[:°#]?\s*([\w-]+)/i)?.[1] || null,
+      description: null,
+      client_nom: null,
       observations: null
     };
   }
 
+  if (type === 'debours') {
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 3);
+    return {
+      libelle: lines[0]?.slice(0, 80) || null,
+      montant,
+      devise: text.match(/\b(TND|DT|EUR|USD)\b/)?.[1] || 'TND',
+      beneficiaire: lines[1]?.slice(0, 50) || null,
+      date_debours: date,
+      ref_dossier: text.match(/\b(\d{4}[IET]\d{5})\b/)?.[1] || null,
+      justificatif: text.match(/(?:facture|reçu|N°|invoice)\s*[:\-#°]?\s*([\w-]+)/i)?.[1] || null,
+      observations: null
+    };
+  }
   return {};
 }
 
-// ── Route principale ─────────────────────────────────────────────────────────
+// ── Route principale ──────────────────────────────────────────────────────────
 
-router.post('/extract-pdf', upload.single('pdf'), async (req, res) => {
+router.post('/extract-pdf', async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'Aucun fichier PDF reçu' });
+    // Parser le multipart manuellement
+    let fileBuffer, type;
+    try {
+      ({ fileBuffer, type } = await parseMultipartBuffer(req));
+    } catch (parseErr) {
+      return res.status(400).json({ error: 'Erreur lecture fichier: ' + parseErr.message });
     }
 
-    const type = req.body.type; // 'client' | 'dossier' | 'debours'
+    if (!fileBuffer || fileBuffer.length < 100) {
+      return res.status(400).json({ error: 'Fichier PDF invalide ou vide' });
+    }
+
     if (!PROMPTS[type]) {
-      return res.status(400).json({ error: 'Type invalide. Choisir: client, dossier, debours' });
+      type = 'dossier'; // fallback
     }
 
-    // 1. Extraire le texte du PDF
+    // Vérifier que c'est bien un PDF (commence par %PDF)
+    const header = fileBuffer.slice(0, 5).toString('ascii');
+    if (!header.startsWith('%PDF')) {
+      return res.status(422).json({ error: 'Le fichier n\'est pas un PDF valide' });
+    }
+
+    // Extraire le texte
     let pdfText = '';
     try {
-      pdfText = await extractTextFromPdf(req.file.buffer);
-    } catch (pdfErr) {
-      return res.status(422).json({ error: 'Impossible de lire ce PDF : ' + pdfErr.message });
+      pdfText = await extractTextFromPdf(fileBuffer);
+    } catch (e) {
+      pdfText = '';
     }
 
     if (!pdfText || pdfText.trim().length < 10) {
-      return res.status(422).json({ error: 'Le PDF ne contient pas de texte lisible (PDF scanné ?)' });
+      return res.status(422).json({
+        error: 'Le PDF ne contient pas de texte lisible (PDF scanné ou image)'
+      });
     }
 
-    // Limiter le texte à 4000 caractères pour l'API
-    const textToAnalyze = pdfText.slice(0, 4000);
-
-    // 2. Essayer OpenAI d'abord
+    // Essayer OpenAI si clé disponible
     const apiKey = process.env.OPENAI_API_KEY;
     let extracted = null;
-    let method = 'ai';
+    let method = 'regex';
 
     if (apiKey) {
       try {
@@ -220,56 +284,56 @@ router.post('/extract-pdf', upload.single('pdf'), async (req, res) => {
         const completion = await openai.chat.completions.create({
           model: 'gpt-4o-mini',
           messages: [
-            { role: 'system', content: PROMPTS[type] },
-            { role: 'user', content: `Voici le texte du document :\n\n${textToAnalyze}` }
+            {
+              role: 'system',
+              content: PROMPTS[type]
+            },
+            {
+              role: 'user',
+              content: 'Voici le texte du document :\n\n' + pdfText.slice(0, 4000)
+            }
           ],
           temperature: 0.1,
           max_tokens: 600
         });
 
         const raw = completion.choices[0]?.message?.content || '{}';
-        // Nettoyer la réponse (enlever les balises markdown si présentes)
         const jsonStr = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
         extracted = JSON.parse(jsonStr);
+        method = 'ai';
       } catch (aiErr) {
-        console.log('OpenAI error, falling back to regex:', aiErr.message);
+        console.log('OpenAI error, using regex fallback:', aiErr.message);
         extracted = extractWithRegex(pdfText, type);
-        method = 'regex';
       }
     } else {
-      // Pas de clé API → regex fallback
       extracted = extractWithRegex(pdfText, type);
-      method = 'regex';
     }
 
-    // Nettoyer les valeurs null/undefined
+    // Nettoyer les valeurs nulles/vides
     const cleaned = {};
     for (const [k, v] of Object.entries(extracted || {})) {
-      if (v !== null && v !== undefined && v !== '' && v !== 'null') {
-        cleaned[k] = v;
+      if (v !== null && v !== undefined && v !== '' && v !== 'null' && v !== 'undefined') {
+        cleaned[k] = String(v).trim();
       }
     }
 
     res.json({
       success: true,
-      method,           // 'ai' ou 'regex'
+      method,
       type,
       data: cleaned,
-      text_length: pdfText.length,
-      preview: pdfText.slice(0, 300) // aperçu du texte extrait
+      fields_count: Object.keys(cleaned).length,
+      preview: pdfText.slice(0, 200)
     });
 
   } catch (error) {
     console.error('AI Extract error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Erreur serveur: ' + error.message });
   }
 });
 
-// Erreur multer
+// Erreur multer (au cas où)
 router.use((err, req, res, next) => {
-  if (err.code === 'LIMIT_FILE_SIZE') {
-    return res.status(400).json({ error: 'Fichier trop grand (max 20 MB)' });
-  }
   res.status(400).json({ error: err.message });
 });
 

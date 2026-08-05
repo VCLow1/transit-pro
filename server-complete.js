@@ -4,7 +4,12 @@ const jwt = require('jsonwebtoken');
 const path = require('path');
 
 const app = express();
-app.use(express.json());
+
+// Appliquer express.json() SAUF pour la route d'upload PDF (multipart)
+app.use((req, res, next) => {
+  if (req.path === '/api/ai/extract-pdf') return next(); // laisser passer raw
+  express.json({ limit: '10mb' })(req, res, next);
+});
 
 // Serve static files with proper MIME types  
 app.use(express.static(path.join(__dirname, 'public'), {
