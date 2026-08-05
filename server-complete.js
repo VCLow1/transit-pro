@@ -264,10 +264,40 @@ const mockData = {
   paiements: [
     { id: 1, facture_id: 2, facture_numero: 'FAC202600002', montant: 1800, date_paiement: '2026-01-25', mode_paiement: 'virement' },
     { id: 2, facture_id: 3, facture_numero: 'FAC202600003', montant: 1800, date_paiement: '2026-01-20', mode_paiement: 'chèque' }
-  ]
-};
+  ],
 
-const users = mockData.users; // For backward compatibility
+  // Étapes de validation des dossiers
+  etapes: [
+    {
+      id: 1, dossier_id: 1, dossier_ref: '2026I00001',
+      titre_etape: '3. Déclaration en douane',
+      statut: 'validee', auteur: 'agent01', auteur_nom: 'Mohamed Ben Ahmed',
+      date_declaration: '2026-01-16', date_validation: '2026-01-17',
+      commentaire: 'Déclaration déposée et acceptée', pieces_jointes: []
+    },
+    {
+      id: 2, dossier_id: 1, dossier_ref: '2026I00001',
+      titre_etape: '5. Paiement des débours',
+      statut: 'en_attente', auteur: 'agent01', auteur_nom: 'Mohamed Ben Ahmed',
+      date_declaration: '2026-01-20', date_validation: null,
+      commentaire: 'En attente de validation superviseur', pieces_jointes: []
+    },
+    {
+      id: 3, dossier_id: 2, dossier_ref: '2026E00001',
+      titre_etape: '1. Ouverture du dossier',
+      statut: 'validee', auteur: 'admin', auteur_nom: 'Administrateur BCI',
+      date_declaration: '2026-01-20', date_validation: '2026-01-20',
+      commentaire: 'Dossier ouvert', pieces_jointes: []
+    },
+    {
+      id: 4, dossier_id: 2, dossier_ref: '2026E00001',
+      titre_etape: '2. Réception des documents / marchandises',
+      statut: 'en_attente', auteur: 'agent01', auteur_nom: 'Mohamed Ben Ahmed',
+      date_declaration: '2026-01-22', date_validation: null,
+      commentaire: 'Documents en cours de vérification', pieces_jointes: []
+    }
+  ]
+};const users = mockData.users; // For backward compatibility
 
 // Auth endpoint
 app.post('/api/auth/login', async (req, res) => {
@@ -564,6 +594,7 @@ app.get('/api/dossiers/:id', (req, res) => {
     dossier.factures = mockData.factures.filter(f => f.dossier_id === dossier.id);
     dossier.debours = mockData.debours.filter(d => d.dossier_id === dossier.id);
     dossier.preavis = mockData.preavis.filter(p => p.dossier_id === dossier.id);
+    dossier.etapes = mockData.etapes ? mockData.etapes.filter(e => e.dossier_id === dossier.id) : [];
     dossier.notes = [
       { contenu: 'Dossier créé avec succès', auteur: dossier.cree_par || 'admin', created_at: dossier.created_at }
     ];
@@ -1404,6 +1435,106 @@ app.get('/api/search', (req, res) => {
 
 // ── AI PDF Extraction ─────────────────────────────────────────────────────────
 app.use('/api/ai', require('./routes/ai-extract'));
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ÉTAPES DE VALIDATION DES DOSSIERS
+// ══════════════════════════════════════════════════════════════════════════════
+
+function getUser(req) {
+  try {
+    const auth = req.headers.authorization;
+    if (!auth) return null;
+    const decoded = jwt.verify(auth.slice(7), process.env.JWT_SECRET || 'jwt_secret_key');
+    return mockData.users.find(u => u.id === decoded.id) || null;
+  } catch { return null; }
+}
+
+// GET étapes en attente (superviseur/admin)
+app.get('/api/etapes/pending', (req, res) => {
+  try {
+    const pending = mockData.etapes
+      .filter(e => e.statut === 'en_attente')
+      .map(e => ({
+        ...e,
+        raison_sociale: mockData.dossiers.find(d => d.id === e.dossier_id)?.raison_sociale || ''
+      }));
+    res.json(pending);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET mes déclarations (agent)
+app.get('/api/etapes/my-declarations', (req, res) => {
+  try {
+    const user = getUser(req);
+    const login = user?.login || 'agent01';
+    const mes = mockData.etapes
+      .filter(e => e.auteur === login)
+      .map(e => ({
+        ...e,
+        raison_sociale: mockData.dossiers.find(d => d.id === e.dossier_id)?.raison_sociale || ''
+      }));
+    res.json(mes);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET étapes d'un dossier
+app.get('/api/etapes/dossier/:dossierId', (req, res) => {
+  try {
+    const etapes = mockData.etapes.filter(e => e.dossier_id === parseInt(req.params.dossierId));
+    res.json(etapes);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST déclarer une étape
+app.post('/api/etapes', (req, res) => {
+  try {
+    const user = getUser(req);
+    const { dossier_id, titre_etape, commentaire } = req.body;
+    const dossier = mockData.dossiers.find(d => d.id === parseInt(dossier_id));
+    if (!dossier) return res.status(404).json({ error: 'Dossier non trouvé' });
+    const newEtape = {
+      id: Math.max(...mockData.etapes.map(e => e.id), 0) + 1,
+      dossier_id: parseInt(dossier_id),
+      dossier_ref: dossier.numero,
+      titre_etape,
+      statut: 'en_attente',
+      auteur: user?.login || 'agent01',
+      auteur_nom: ((user?.prenom || '') + ' ' + (user?.nom || '')).trim(),
+      date_declaration: new Date().toISOString().split('T')[0],
+      date_validation: null,
+      commentaire: commentaire || '',
+      pieces_jointes: []
+    };
+    mockData.etapes.push(newEtape);
+    res.json({ id: newEtape.id, message: 'Étape déclarée avec succès' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH valider une étape
+app.patch('/api/etapes/:id/validate', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const idx = mockData.etapes.findIndex(e => e.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'Étape non trouvée' });
+    mockData.etapes[idx].statut = 'validee';
+    mockData.etapes[idx].date_validation = new Date().toISOString().split('T')[0];
+    res.json({ message: 'Étape validée' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH rejeter une étape
+app.patch('/api/etapes/:id/reject', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { motif_rejet } = req.body;
+    const idx = mockData.etapes.findIndex(e => e.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'Étape non trouvée' });
+    mockData.etapes[idx].statut = 'rejetee';
+    mockData.etapes[idx].motif_rejet = motif_rejet || '';
+    mockData.etapes[idx].date_validation = new Date().toISOString().split('T')[0];
+    res.json({ message: 'Étape rejetée' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // Test CSS endpoint
 app.get('/test-css', (req, res) => {
