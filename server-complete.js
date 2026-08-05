@@ -1602,12 +1602,15 @@ app.post('/api/client-portal/login', (req, res) => {
       return res.status(401).json({ error: 'Code client ou mot de passe incorrect' });
     }
 
-    // Mot de passe par défaut = les 4 derniers chiffres du NIF ou "client123"
-    const defaultPass = client.nif
-      ? client.nif.replace(/\D/g, '').slice(-4) || 'client123'
-      : 'client123';
+    // Mot de passe accepté :
+    // 1. "client123" (universel pour la démo)
+    // 2. Les 4 derniers chiffres du NIF
+    // 3. Le code client en minuscules (ex: cli001)
+    const nifDigits = (client.nif || '').replace(/\D/g, '').slice(-4);
+    const validPasswords = ['client123', client.code.toLowerCase()];
+    if (nifDigits.length === 4) validPasswords.push(nifDigits);
 
-    if (mot_de_passe !== defaultPass && mot_de_passe !== 'client123') {
+    if (!validPasswords.includes(mot_de_passe.trim())) {
       return res.status(401).json({ error: 'Code client ou mot de passe incorrect' });
     }
 
