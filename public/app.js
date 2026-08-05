@@ -2010,28 +2010,34 @@ async function saveUser(e, id) {
  * @param {string} widgetId - ID du conteneur pour les callbacks
  */
 function pdfUploadWidget(type, widgetId) {
-  const labels = { client: 'client / contrat', dossier: 'BL / connaissement / facture commerciale', debours: 'facture / reçu / bon de caisse' };
+  const labels = {
+    client: 'fiche client / contrat / KYC',
+    dossier: 'BL · connaissement · facture commerciale · DAU',
+    debours: 'facture fournisseur · reçu · bon de caisse'
+  };
   return `
   <div id="${widgetId}" style="
     border:2px dashed var(--accent);border-radius:10px;padding:14px 16px;
     margin-bottom:18px;background:var(--accent-light);
   ">
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <span style="font-size:20px">🤖</span>
+      <span style="font-size:22px">🤖</span>
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:600;color:var(--accent)">Extraction automatique par IA</div>
         <div style="font-size:11px;color:var(--text2);margin-top:2px">
           Importez un PDF (${labels[type]}) — les champs seront remplis automatiquement
         </div>
       </div>
-      <label style="cursor:pointer">
-        <input type="file" accept=".pdf" style="display:none"
-          onchange="handlePdfUpload(event,'${type}','${widgetId}')"/>
-        <span class="btn btn-primary btn-sm">
-          <svg viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
-          Importer PDF
-        </span>
-      </label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <label style="cursor:pointer">
+          <input type="file" accept=".pdf" style="display:none"
+            onchange="handlePdfUpload(event,'${type}','${widgetId}')"/>
+          <span class="btn btn-primary btn-sm">
+            <svg viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
+            Importer PDF
+          </span>
+        </label>
+      </div>
     </div>
     <div id="${widgetId}_status" style="margin-top:8px;display:none"></div>
   </div>`;
@@ -2076,13 +2082,28 @@ async function handlePdfUpload(event, type, widgetId) {
     fillFormFromPdf(type, data);
 
     const methodLabel = result.method === 'ai'
-      ? '✅ IA (GPT-4o)'
-      : '⚠️ Extraction basique (sans clé OpenAI)';
+      ? '✅ GPT-4o (IA)'
+      : '🔍 Extraction automatique';
+
+    // Afficher les champs trouvés
+    const fieldNames = {
+      raison_sociale:'Raison sociale', code:'Code', adresse:'Adresse', ville:'Ville',
+      telephone:'Téléphone', email:'Email', nif:'NIF', contact:'Contact',
+      marchandise:'Marchandise', pays_origine:'Pays origine', pays_destination:'Pays destination',
+      incoterm:'Incoterm', navire:'Navire', transporteur:'Transporteur',
+      type_transport:'Transport', type_declaration:'Type déclaration', client_nom:'Client',
+      valeur_marchandise:'Valeur', libelle:'Libellé', montant:'Montant',
+      beneficiaire:'Bénéficiaire', date_debours:'Date', ref_dossier:'Réf. dossier'
+    };
+    const foundFields = Object.keys(data).filter(k => data[k])
+      .map(k => `<span style="background:#d1fae5;color:#065f46;padding:1px 6px;border-radius:4px;font-size:10px">${fieldNames[k]||k}</span>`)
+      .join(' ');
 
     statusEl.innerHTML = `
       <div style="background:#d1fae5;border-radius:6px;padding:8px 12px;font-size:12px;color:#065f46">
-        ${methodLabel} — <strong>${fieldsCount} champ(s) rempli(s)</strong> depuis <em>${file.name}</em>
-        <span style="float:right;cursor:pointer;color:#065f46" onclick="this.parentElement.parentElement.style.display='none'">✕</span>
+        ${methodLabel} — <strong>${fieldsCount} champ(s) extrait(s)</strong> depuis <em>${file.name}</em>
+        <span style="float:right;cursor:pointer;color:#065f46;font-size:14px" onclick="this.parentElement.parentElement.style.display='none'">✕</span>
+        <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:3px">${foundFields}</div>
       </div>`;
 
     toast(`${fieldsCount} champs extraits du PDF`, 'success');

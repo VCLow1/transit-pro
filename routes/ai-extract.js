@@ -174,66 +174,277 @@ const PROMPTS = {
 }`
 };
 
-// ── Fallback regex (sans OpenAI) ──────────────────────────────────────────────
+// ── Extraction intelligente sans IA ──────────────────────────────────────────
 
 function extractWithRegex(text, type) {
-  const email = text.match(/[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}/)?.[0] || null;
-  const tel = text.match(/(?:\+?[\d\s.-]{8,15})/)?.[0]?.replace(/\s/g, '') || null;
-  const montant = text.match(/(\d[\d\s,.]*)\s*(?:TND|DT|EUR|USD)/i)?.[1]?.replace(/[\s,]/g, '') || null;
-  const date = text.match(/(\d{4}[-/]\d{2}[-/]\d{2})/)?.[1] || null;
-  const nif = text.match(/(?:NIF|N\.I\.F)\s*[:\-=]?\s*([\w/]+)/i)?.[1] || null;
+  // ── Helpers génériques ────────────────────────────────────────────────
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+  const T = text; // alias court
+
+  // Cherche la valeur après un label
+  function after(patterns, maxLen = 80) {
+    for (const pat of patterns) {
+      const re = new RegExp(String(pat) + '[\\s:=\\-–|]+([^\\n\\r]{2,' + maxLen + '})', 'i');
+      const m = T.match(re);
+      if (m) return m[1].trim().split(/\s{3,}/)[0].trim();
+    }
+    return null;
+  }
+
+  // Cherche sur la ligne suivant un label
+  function nextLine(patterns) {
+    for (const pat of patterns) {
+      const re = new RegExp(String(pat) + '[\\s:=\\-–|]*\\r?\\n([^\\n\\r]{2,80})', 'i');
+      const m = T.match(re);
+      if (m) return m[1].trim();
+    }
+    return null;
+  }
+
+  // Email
+  const email = T.match(/[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,6}/)?.[0] || null;
+
+  // Téléphone — formats TN/international
+  const tel = T.match(
+    /(?:(?:Tél|Tel|Phone|GSM|Mob|Fax|Téléphone)\s*[:\-.]?\s*)?(\+?(?:216|33|212|34|39)[\s.-]?\d[\d\s.-]{6,14}|\b\d{2}[\s.-]?\d{3}[\s.-]?\d{3}\b)/i
+  )?.[1]?.replace(/\s/g, '') || null;
+
+  // Montant — cherche en TND/DT/EUR/USD
+  const montantMatch = T.match(/(\d{1,3}(?:[.\s]\d{3})*(?:[,]\d{1,3})?)\s*(?:TND|DT|EUR|USD|€|\$)/i)
+    || T.match(/(?:Montant|Amount|Total|Net)\s*[:\-=]?\s*(\d[\d\s.,]*)/i);
+  const montant = montantMatch?.[1]?.replace(/[\s]/g, '').replace(',', '.') || null;
+
+  // Date — plusieurs formats
+  const dateMatch = T.match(/(\d{4}[-\/]\d{2}[-\/]\d{2})/)?.[1]
+    || T.match(/(\d{2}[-\/]\d{2}[-\/]\d{4})/)?.[1]?.split(/[-\/]/).reverse().join('-')
+    || T.match(/(\d{1,2})\s+(?:jan|fév|mar|avr|mai|jun|jul|aoû|sep|oct|nov|déc)[a-z]*\s+(\d{4})/i)?.[0] || null;
+  const dateStr = dateMatch ? normalizeDate(dateMatch) : null;
+
+  // NIF / Matricule fiscal
+  const nif = after(['NIF', 'N\\.I\\.F', 'Numéro fiscal', 'N° fiscal'], 30)
+    || T.match(/\b\d{7}[A-Z]\/[A-Z]\/[A-Z]\/\d{3}\b/)?.[0]
+    || T.match(/\b\d{6,10}[A-Z]?\b/)?.[0] || null;
+
+  const mf = after(['Matricule fiscal', 'MF', 'Mat\\.? fiscal', 'Identifiant fiscal'], 30) || null;
+
+  // Pays
+  const pays_list = ['Tunisie','France','Maroc','Algérie','Espagne','Italie','Allemagne','Chine','Turquie','Inde','USA','Belgique','Sénégal','Libye','Égypte'];
+  function findPays(hint) {
+    const v = after(hint, 40);
+    if (v) return v;
+    return pays_list.find(p => new RegExp('\\b' + p + '\\b','i').test(T)) || null;
+  }
+
+  // ── EXTRACTION PAR TYPE ───────────────────────────────────────────────
 
   if (type === 'client') {
-    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 4);
+    // Raison sociale — ligne avec SARL/SA/SAS/SUARL/Ent ou ligne en majuscules
+    const raison = after(['Raison sociale','Dénomination','Société','Company','Entreprise','Client'])
+      || lines.find(l => /\b(SARL|SA|SAS|SUARL|EURL|Cie|Corp|Ltd|LLC)\b/i.test(l) && l.length < 80)
+      || lines.find(l => l.length > 5 && l.length < 60 && /^[A-ZÀÉÈÊËÎÏÔÙÛÇ][A-ZÀ-Ÿa-zà-ÿ\s&.,'-]{4,}$/.test(l))
+      || null;
+
+    // Adresse
+    const adresse = after(['Adresse','Address','Siège social','Siège'], 100)
+      || nextLine(['Adresse','Siège'])
+      || lines.find(l => /\b(rue|avenue|bd|boulevard|route|cité|lot|zone|impasse|place)\b/i.test(l) && l.length < 100)
+      || null;
+
+    // Ville
+    const ville = after(['Ville','City','Localité'])
+      || T.match(/\b(\d{4,5})\s+([A-ZÀÉÈÊËÎÏÔÙÛÇ][a-zàéèêëîïôùûç\s-]{3,30})/)?.[2]?.trim()
+      || lines.find(l => /^(Tunis|Sfax|Sousse|Bizerte|Nabeul|Monastir|Gabès|Gafsa|Kairouan|Ariana|Ben Arous|Manouba)/i.test(l))
+      || null;
+
+    const code_postal = T.match(/\b(\d{4})\b/)?.[1] || null;
+
+    const contact = after(['Contact','Responsable','Gérant','Directeur','Représentant','Interlocuteur'], 50)
+      || null;
+
+    const code = after(['Code client','N° client','Réf client','Référence client'], 20) || null;
+
+    const secteur = after(['Secteur','Activité','Domaine','Secteur d\'activité'], 50) || null;
+
+    const notes_parts = [];
+    ['RC', 'Registre du commerce', 'R\\.C\\.'].forEach(p => {
+      const v = after([p], 30);
+      if (v) notes_parts.push('RC: ' + v);
+    });
+
     return {
-      raison_sociale: lines.find(l => /[A-Z]{3,}/.test(l) && l.length < 60) || null,
+      code,
+      raison_sociale: raison,
+      adresse,
+      ville,
+      code_postal,
+      pays: findPays(['Pays','Country']) || 'Tunisie',
       telephone: tel,
       email,
+      contact,
       nif,
-      ville: text.match(/(?:Ville|City)\s*[:\-]?\s*([\w\s]+)/i)?.[1]?.trim() || null,
-      adresse: null,
-      code: null,
-      pays: 'Tunisie',
-      notes: null
+      matricule_fiscal: mf,
+      secteur_lib: secteur,
+      notes: notes_parts.length ? notes_parts.join(' | ') : null
     };
   }
 
   if (type === 'dossier') {
+    // Marchandise
+    const marchandise = after([
+      'Désignation', 'Description des marchandises', 'Nature de la marchandise',
+      'Marchandise', 'Goods', 'Commodity', 'Description', 'Libellé'
+    ], 120)
+    || nextLine(['Désignation', 'Description'])
+    || null;
+
+    // Pays
+    const pays_origine = after([
+      'Pays d\'origine', 'Pays origine', 'Country of origin', 'Origine',
+      'Port de chargement', 'Port of loading', 'Provenance'
+    ], 50) || findPays(['Origine']);
+
+    const pays_destination = after([
+      'Pays de destination', 'Country of destination', 'Destination',
+      'Port de déchargement', 'Port of discharge', 'Port destinataire'
+    ], 50) || null;
+
+    // Incoterm
+    const incoterm = T.match(/\b(EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP|DDU|DAT|DAF)\b/i)?.[1]?.toUpperCase() || null;
+
+    // Navire / transporteur
+    const navire = after(['Navire', 'Vessel', 'Ship', 'M/V', 'Vol', 'Flight', 'Numéro vol', 'Flight No'], 50)
+      || T.match(/(?:M\/V|S\/S|MV)\s+([\w\s-]{3,40})/i)?.[1]?.trim()
+      || null;
+
+    const transporteur = after([
+      'Transporteur', 'Carrier', 'Compagnie', 'Shipping line', 'Armateur',
+      'Compagnie aérienne', 'Airline', 'Transitaire'
+    ], 60) || null;
+
+    // Type transport
+    const type_transport =
+      /a[eé]rien|flight|cargo|airway|AWB|LTA|avion/i.test(T) ? 'aerien' :
+      /routier|truck|TIR|CMR|camion|road/i.test(T) ? 'routier' :
+      /ferroviaire|rail|wagon|SNCF/i.test(T) ? 'ferroviaire' : 'maritime';
+
+    // Type déclaration
+    const type_declaration =
+      /export|expéditi/i.test(T) ? 'EXP' :
+      /transit/i.test(T) ? 'TRA' : 'IMP';
+
+    // Client / importateur
+    const client_nom = after([
+      'Importateur', 'Exportateur', 'Expéditeur', 'Destinataire', 'Consignee',
+      'Shipper', 'Notify party', 'Notify', 'Client', 'Donneur d\'ordre'
+    ], 60) || null;
+
+    // Valeur
+    const valeur = after(['Valeur', 'Value', 'Valeur en douane', 'Valeur facturée', 'Invoice value'], 30)
+      || montant || null;
+
+    const devise = T.match(/\b(TND|DT|EUR|USD|GBP|JPY|CHF|MAD|DZD)\b/)?.[1] || 'TND';
+
+    // Références
+    const refs = [];
+    ['N° BL', 'Bill of Lading', 'B/L No', 'AWB', 'LTA', 'CMR', 'Réf'].forEach(p => {
+      const v = after([p], 40);
+      if (v) refs.push(p.replace(/[/\\]/g, '') + ': ' + v);
+    });
+
     return {
-      marchandise: text.match(/(?:marchandise|goods|nature|désignation)\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim() || null,
-      pays_origine: text.match(/(?:origine|origin|provenance)\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim() || null,
-      pays_destination: text.match(/(?:destination|destinataire)\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim() || null,
-      incoterm: text.match(/\b(EXW|FOB|CIF|CFR|DAP|DDP|FCA|CPT|CIP|DAT)\b/i)?.[1] || null,
-      navire: text.match(/(?:navire|vessel|ship|vol|flight)\s*[:\-]\s*([\w\s-]+)/i)?.[1]?.trim() || null,
-      transporteur: text.match(/(?:transporteur|carrier|compagnie)\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim() || null,
-      type_transport: /a[eé]rien|flight|cargo/i.test(text) ? 'aerien' :
-                      /routier|truck|camion/i.test(text) ? 'routier' : 'maritime',
-      type_declaration: /export/i.test(text) ? 'EXP' : /transit/i.test(text) ? 'TRA' : 'IMP',
-      valeur_marchandise: montant,
-      devise: text.match(/\b(TND|DT|EUR|USD)\b/)?.[1] || 'TND',
-      description: null,
-      client_nom: null,
-      observations: null
+      description: after(['Objet', 'Description générale', 'Nature opération'], 100) || marchandise?.slice(0, 80) || null,
+      marchandise,
+      pays_origine,
+      pays_destination,
+      incoterm,
+      navire,
+      transporteur,
+      type_transport,
+      type_declaration,
+      client_nom,
+      valeur_marchandise: valeur,
+      devise,
+      observations: refs.length ? refs.join(' | ') : null
     };
   }
 
   if (type === 'debours') {
-    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 3);
+    const libelle = after([
+      'Objet', 'Libellé', 'Désignation', 'Prestation', 'Nature', 'Pour', 'Motif'
+    ], 100)
+    || lines.find(l => l.length > 5 && l.length < 80 && !/\d{6,}/.test(l))
+    || null;
+
+    const beneficiaire = after([
+      'Bénéficiaire', 'Fournisseur', 'Prestataire', 'Payé à', 'À l\'ordre de',
+      'Émetteur', 'Société', 'Vendeur', 'Destinataire'
+    ], 60)
+    || lines.find(l => /\b(SARL|SA|SAS|SUARL|ADII|STAM|SNTRI|Port|Douane)\b/i.test(l) && l.length < 60)
+    || null;
+
+    const ref_dossier = T.match(/\b(\d{4}[IET]\d{5})\b/)?.[1]
+      || after(['Dossier', 'Réf dossier', 'N° dossier', 'Référence'], 20)
+      || null;
+
+    const justificatif = after([
+      'N° facture', 'Facture N°', 'Référence facture', 'N° reçu', 'Reçu N°',
+      'Invoice No', 'Receipt No', 'N°'
+    ], 30) || null;
+
     return {
-      libelle: lines[0]?.slice(0, 80) || null,
+      libelle,
       montant,
-      devise: text.match(/\b(TND|DT|EUR|USD)\b/)?.[1] || 'TND',
-      beneficiaire: lines[1]?.slice(0, 50) || null,
-      date_debours: date,
-      ref_dossier: text.match(/\b(\d{4}[IET]\d{5})\b/)?.[1] || null,
-      justificatif: text.match(/(?:facture|reçu|N°|invoice)\s*[:\-#°]?\s*([\w-]+)/i)?.[1] || null,
-      observations: null
+      devise: T.match(/\b(TND|DT|EUR|USD)\b/)?.[1] || 'TND',
+      beneficiaire,
+      date_debours: dateStr,
+      ref_dossier,
+      justificatif,
+      observations: after(['Observations', 'Remarques', 'Notes', 'Commentaires'], 100) || null
     };
   }
+
   return {};
 }
 
+function normalizeDate(d) {
+  if (!d) return null;
+  // YYYY-MM-DD déjà bon
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+  // DD/MM/YYYY ou DD-MM-YYYY
+  const m = d.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  return null;
+}
+
 // ── Route principale ──────────────────────────────────────────────────────────
+
+// Route de prévisualisation — voir le texte brut extrait du PDF
+router.post('/preview-pdf', async (req, res) => {
+  try {
+    let fileBuffer;
+    try {
+      ({ fileBuffer } = await parseMultipartBuffer(req));
+    } catch (e) {
+      return res.status(400).json({ error: e.message });
+    }
+    if (!fileBuffer || fileBuffer.length < 100) {
+      return res.status(400).json({ error: 'Fichier PDF invalide' });
+    }
+    const header = fileBuffer.slice(0, 5).toString('ascii');
+    if (!header.startsWith('%PDF')) {
+      return res.status(422).json({ error: 'Pas un PDF valide' });
+    }
+    const text = await extractTextFromPdf(fileBuffer);
+    res.json({
+      length: text.length,
+      lines: text.split('\n').filter(l => l.trim()).length,
+      preview_full: text.slice(0, 3000),
+      has_openai: !!process.env.OPENAI_API_KEY
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 router.post('/extract-pdf', async (req, res) => {
   try {
