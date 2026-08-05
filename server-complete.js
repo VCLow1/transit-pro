@@ -642,8 +642,26 @@ app.patch('/api/dossiers/:id/statut', (req, res) => {
 app.post('/api/dossiers/:id/notes', (req, res) => {
   try {
     const { contenu } = req.body;
-    // In real implementation, would store in database
     res.json({ message: 'Note ajoutée avec succès' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/dossiers/:id', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const idx = mockData.dossiers.findIndex(d => d.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'Dossier non trouvé' });
+    const { marchandise, pays_origine, pays_destination, incoterm, description, observations, statut } = req.body;
+    if (marchandise !== undefined) mockData.dossiers[idx].marchandise = marchandise;
+    if (pays_origine !== undefined) mockData.dossiers[idx].pays_origine = pays_origine;
+    if (pays_destination !== undefined) mockData.dossiers[idx].pays_destination = pays_destination;
+    if (incoterm !== undefined) mockData.dossiers[idx].incoterm = incoterm;
+    if (description !== undefined) mockData.dossiers[idx].description = description;
+    if (observations !== undefined) mockData.dossiers[idx].observations = observations;
+    if (statut !== undefined) mockData.dossiers[idx].statut = statut;
+    res.json({ message: 'Dossier mis à jour' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -805,6 +823,178 @@ app.get('/api/parametres/rubriques', (req, res) => {
 });
 
 // ── CRÉATION DE DOCUMENTS ────────────────────────────────────────────────────────
+
+// ── MISES À JOUR ET SUPPRESSIONS ────────────────────────────────────────────────
+
+// PUT devis
+app.put('/api/devis/:id', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const idx = mockData.devis.findIndex(d => d.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'Devis non trouvé' });
+    mockData.devis[idx] = { ...mockData.devis[idx], ...req.body };
+    res.json({ message: 'Devis mis à jour' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH statut devis
+app.patch('/api/devis/:id/statut', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const idx = mockData.devis.findIndex(d => d.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'Devis non trouvé' });
+    mockData.devis[idx].statut = req.body.statut;
+    res.json({ message: 'Statut mis à jour' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT facture
+app.put('/api/factures/:id', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const idx = mockData.factures.findIndex(f => f.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'Facture non trouvée' });
+    mockData.factures[idx] = { ...mockData.factures[idx], ...req.body };
+    res.json({ message: 'Facture mise à jour' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH statut facture
+app.patch('/api/factures/:id/statut', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const idx = mockData.factures.findIndex(f => f.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'Facture non trouvée' });
+    mockData.factures[idx].statut = req.body.statut;
+    res.json({ message: 'Statut mis à jour' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT débours
+app.put('/api/debours/:id', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const idx = mockData.debours.findIndex(d => d.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'Débours non trouvé' });
+    mockData.debours[idx] = { ...mockData.debours[idx], ...req.body };
+    res.json({ message: 'Débours mis à jour' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE débours
+app.delete('/api/debours/:id', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const idx = mockData.debours.findIndex(d => d.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'Débours non trouvé' });
+    mockData.debours.splice(idx, 1);
+    res.json({ message: 'Débours supprimé' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE facture
+app.delete('/api/factures/:id', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const idx = mockData.factures.findIndex(f => f.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'Facture non trouvée' });
+    if (mockData.factures[idx].statut === 'payee') {
+      return res.status(400).json({ error: 'Impossible de supprimer une facture payée' });
+    }
+    mockData.factures.splice(idx, 1);
+    res.json({ message: 'Facture supprimée' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE devis
+app.delete('/api/devis/:id', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const idx = mockData.devis.findIndex(d => d.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'Devis non trouvé' });
+    mockData.devis.splice(idx, 1);
+    res.json({ message: 'Devis supprimé' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE dossier
+app.delete('/api/dossiers/:id', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const dossier = mockData.dossiers.find(d => d.id === id);
+    if (!dossier) return res.status(404).json({ error: 'Dossier non trouvé' });
+    if (dossier.statut !== 'cloture') {
+      return res.status(400).json({ error: 'Seuls les dossiers clôturés peuvent être supprimés' });
+    }
+    mockData.dossiers.splice(mockData.dossiers.indexOf(dossier), 1);
+    res.json({ message: 'Dossier supprimé' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE client
+app.delete('/api/clients/:id', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const idx = mockData.clients.findIndex(c => c.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'Client non trouvé' });
+    const hasDossiers = mockData.dossiers.some(d => d.client_id === id && d.statut !== 'cloture');
+    if (hasDossiers) {
+      return res.status(400).json({ error: 'Ce client a des dossiers en cours, impossible de le supprimer' });
+    }
+    mockData.clients.splice(idx, 1);
+    res.json({ message: 'Client supprimé' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET détail facture
+app.get('/api/factures/:id', (req, res) => {
+  try {
+    const facture = mockData.factures.find(f => f.id === parseInt(req.params.id));
+    if (!facture) return res.status(404).json({ error: 'Facture non trouvée' });
+    const paiements = mockData.paiements.filter(p => p.facture_id === facture.id);
+    res.json({ ...facture, paiements });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET détail devis
+app.get('/api/devis/:id', (req, res) => {
+  try {
+    const devis = mockData.devis.find(d => d.id === parseInt(req.params.id));
+    if (!devis) return res.status(404).json({ error: 'Devis non trouvé' });
+    res.json(devis);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET paiements d'une facture
+app.get('/api/factures/:id/paiements', (req, res) => {
+  try {
+    const facture_id = parseInt(req.params.id);
+    const paiements = mockData.paiements.filter(p => p.facture_id === facture_id);
+    res.json({ data: paiements, total: paiements.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT préavis
+app.put('/api/preavis/:id', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const idx = mockData.preavis.findIndex(p => p.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'Préavis non trouvé' });
+    mockData.preavis[idx] = { ...mockData.preavis[idx], ...req.body };
+    res.json({ message: 'Préavis mis à jour' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH statut préavis
+app.patch('/api/preavis/:id/statut', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const idx = mockData.preavis.findIndex(p => p.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'Préavis non trouvé' });
+    mockData.preavis[idx].statut = req.body.statut;
+    res.json({ message: 'Statut mis à jour' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // Créer un nouveau devis
 app.post('/api/devis', (req, res) => {
