@@ -10,8 +10,48 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const pdfParse = require('pdf-parse');
 const OpenAI = require('openai');
+
+// Extraction de texte PDF — approche robuste compatible avec toutes les versions
+async function extractTextFromPdf(buffer) {
+  // Méthode 1 : pdf-parse avec PDFParse.getText
+  try {
+    const pdfMod = require('pdf-parse');
+    if (pdfMod && pdfMod.PDFParse) {
+      const parser = new pdfMod.PDFParse({ verbosity: 0, data: buffer });
+      const result = await parser.getText({});
+      if (result && result.text && result.text.trim().length > 5) {
+        return result.text;
+      }
+    }
+  } catch (e) {
+    console.log('pdf-parse PDFParse.getText failed:', e.message);
+  }
+
+  // Méthode 2 : extraction brute du texte visible dans le PDF (BT/ET blocks)
+  const raw = buffer.toString('latin1');
+  const strings = [];
+
+  const btBlocks = raw.match(/BT[\s\S]*?ET/g) || [];
+  for (const block of btBlocks) {
+    const matches = block.match(/\(([^)\\]*(?:\\.[^)\\]*)*)\)\s*Tj/g) || [];
+    for (const m of matches) {
+      const str = m.replace(/^\(/, '').replace(/\)\s*Tj$/, '')
+        .replace(/\\n/g, '\n').replace(/\\\(/g, '(').replace(/\\\)/g, ')');
+      if (str.trim().length > 0) strings.push(str);
+    }
+  }
+
+  if (strings.length === 0) {
+    const allStrings = raw.match(/\(([^\x00-\x1f\x7f-\x9f()\\]{2,60})\)/g) || [];
+    for (const s of allStrings) {
+      const clean = s.slice(1, -1).trim();
+      if (clean.length > 3 && /[a-zA-Z]/.test(clean)) strings.push(clean);
+    }
+  }
+
+  return strings.join('\n').replace(/\s{3,}/g, '\n').trim();
+}
 
 // Multer en mémoire (pas de fichier sur disque)
 const upload = multer({
@@ -157,8 +197,7 @@ router.post('/extract-pdf', upload.single('pdf'), async (req, res) => {
     // 1. Extraire le texte du PDF
     let pdfText = '';
     try {
-      const pdfData = await pdfParse(req.file.buffer);
-      pdfText = pdfData.text;
+      pdfText = await extractTextFromPdf(req.file.buffer);
     } catch (pdfErr) {
       return res.status(422).json({ error: 'Impossible de lire ce PDF : ' + pdfErr.message });
     }
